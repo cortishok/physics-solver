@@ -177,6 +177,11 @@ STRING_TO_VARIABLE: Dict[str, Variable] = {
     "p_vapor": Variable.VAPOR_PRESSURE,
     "rho_vapor": Variable.VAPOR_DENSITY,
     "rho_sat": Variable.SATURATED_VAPOR_DENSITY,
+    "lambda_decay": Variable.DECAY_CONSTANT,
+    "R_radius": Variable.RADIUS,
+    "delta_T": Variable.TEMPERATURE,
+    "Q2_cold": Variable.HEAT_COLD,
+    "Q1_hot": Variable.HEAT_HOT,
 
 
 }

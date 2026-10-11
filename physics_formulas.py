@@ -1050,6 +1050,85 @@ FORMULAS_LIST = [
         ),
         pretty="q = ∫ i(t) dt [t₁ → t₂]"
     ),
+    # =========================================================
+    # МОСТЫ И ОБРАТНЫЕ ФОРМУЛЫ ДЛЯ ЦЕПОЧЕК
+    # =========================================================
+
+    # 1. Мосты эквивалентности потенциалов и напряжений
+    Formula(
+        id="U = E_ind", section="electro_dynamics",
+        requires=[Variable.INDUCED_EMF],
+        result_variable=Variable.VOLTAGE,
+        calc=lambda env: env[Variable.INDUCED_EMF],
+        pretty="U = ℰ"
+    ),
+    Formula(
+        id="U = E_emf", section="electro_dynamics",
+        requires=[Variable.EMF],
+        result_variable=Variable.VOLTAGE,
+        calc=lambda env: env[Variable.EMF],
+        pretty="U = ℰ"
+    ),
+    Formula(
+        id="U = U_stop", section="quantum",
+        requires=[Variable.STOPPING_VOLTAGE],
+        result_variable=Variable.VOLTAGE,
+        calc=lambda env: env[Variable.STOPPING_VOLTAGE],
+        pretty="U = Uзад"
+    ),
+
+    # 2. Мосты теплоты (термодинамика -> тепловые машины)
+    Formula(
+        id="Q1_hot = Q", section="efficiency",
+        requires=[Variable.HEAT],
+        result_variable=Variable.HEAT_HOT,
+        calc=lambda env: env[Variable.HEAT],
+        pretty="Q₁ = Q"
+    ),
+    Formula(
+        id="Q_joule = Q", section="electro_dynamics",
+        requires=[Variable.HEAT],
+        result_variable=Variable.JOULE_HEAT,
+        calc=lambda env: env[Variable.HEAT],
+        pretty="Qдж = Q"
+    ),
+    Formula(
+        id="Q = Q_joule", section="electro_dynamics",
+        requires=[Variable.JOULE_HEAT],
+        result_variable=Variable.HEAT,
+        calc=lambda env: env[Variable.JOULE_HEAT],
+        pretty="Q = Qдж"
+    ),
+
+    # 3. Обратная формула скорости в магнитном поле: v = q*B*R / m
+    Formula(
+        id="v = q * B * R / m", section="magnetism",
+        requires=[Variable.CHARGE, Variable.MAGNETIC_FIELD, Variable.RADIUS, Variable.MASS],
+        result_variable=Variable.VELOCITY,
+        calc=lambda env: (env[Variable.CHARGE] * env[Variable.MAGNETIC_FIELD] * env[Variable.RADIUS]) / env[Variable.MASS],
+        pretty="v = (q·B·R) / m"
+    ),
+
+    # 4. Мост работы и энергии: A = Delta_Ek
+    Formula(
+        id="A = E_k", section="mechanics",
+        requires=[Variable.KINETIC_ENERGY],
+        result_variable=Variable.WORK,
+        calc=lambda env: env[Variable.KINETIC_ENERGY],
+        pretty="A = Eк"
+    ),
+
+    # 5. Интеграл ускорения: v = ∫ a(t) dt от t1 до t2
+    Formula(
+        id="v = int(a(t), t1, t2)",
+        section="calculus",
+        requires=[Variable.ACCELERATION_FUNC, Variable.TIME_START, Variable.TIME_END],
+        result_variable=Variable.VELOCITY,
+        calc=lambda env: env[Variable.ACCELERATION_FUNC].definite_integral(
+            "t", env[Variable.TIME_START], env[Variable.TIME_END]
+        ),
+        pretty="v = ∫ a(t) dt [t₁ → t₂]"
+    ),
 ]
 
 FORMULAS: Dict[str, Formula] = {f.id: f for f in FORMULAS_LIST}

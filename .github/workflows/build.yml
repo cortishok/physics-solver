@@ -33,7 +33,7 @@ jobs:
           pip install flet==0.25.2
 
       - name: Build APK
-        run: flet build apk
+        run: flet build apk --module-name app
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

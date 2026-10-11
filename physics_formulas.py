@@ -452,6 +452,13 @@ FORMULAS_LIST = [
         pretty="V = (ν·R·T) / P"
     ),
     Formula(
+        id="rho_liquid = m / V", section="hydrostatics",
+        requires=[Variable.MASS, Variable.VOLUME],
+        result_variable=Variable.DENSITY,
+        calc=lambda env: env[Variable.MASS] / env[Variable.VOLUME],
+        pretty="ρ = m / V"
+    ),
+    Formula(
         id="PV = νRT (найти T_temp)", section="mkt_thermo",
         requires=[Variable.PRESSURE, Variable.VOLUME, Variable.MOLE_AMOUNT],
         result_variable=Variable.TEMPERATURE,

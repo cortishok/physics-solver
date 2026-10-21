@@ -21,23 +21,33 @@ ELECTRICAL_CONTEXT_KEYS = {
     "U_stop", "A_vyh", "l", "freq_rot", "C", "L_ind", "R_ohm",
 }
 
-
 def get_display_name(var: Variable) -> str:
     return VARIABLE_DISPLAY_NAMES.get(var, var.value)
-
 
 def _format_val(val) -> str:
     if isinstance(val, str):
         return val
+    # Оставляем чистый 0, убираем срез 1e-9 для спасения микромира
+    if val == 0.0:
+        return "0"
     if abs(val) >= 1e5 or (0 < abs(val) < 1e-3):
         return f"{val:.4e}"
     if abs(val - round(val)) < 1e-7:
         return str(int(round(val)))
     return f"{val:.4f}".rstrip("0").rstrip(".")
 
-
 def _resolve_variable_name(k_str: str, raw_val: str, all_keys: set[str]) -> Variable | None:
-    """Разрешение коллизии имени 'R' (Радиус vs Сопротивление)."""
+    # Страховочные алиасы для сложных тестов
+    fallbacks = {
+        "q_charge": Variable.CHARGE,
+        "nu_freq": Variable.FREQ_LIGHT,
+        "t_tension": Variable.TENSION,
+    }
+    k_lower = k_str.lower()
+    if k_lower in fallbacks:
+        return fallbacks[k_lower]
+
+    # Разрешение коллизии имени 'R' (Радиус vs Сопротивление)
     if k_str == "R":
         val_s = str(raw_val).strip()
         parts = val_s.split()
@@ -49,8 +59,8 @@ def _resolve_variable_name(k_str: str, raw_val: str, all_keys: set[str]) -> Vari
         if not (all_keys & ELECTRICAL_CONTEXT_KEYS):
             return Variable.RADIUS
         return Variable.RESISTANCE
+        
     return STRING_TO_VARIABLE.get(k_str)
-
 
 def solve_and_calculate(given: dict, target_str: str) -> dict:
     target_clean = str(target_str).strip()
@@ -62,6 +72,33 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
 
     # 1. Парсинг входного словаря Дано
     known_values: dict[Variable, float | str] = dict(DEFAULT_CONSTANTS)
+    
+    # --- ПРОВЕРКА ФИЗИЧЕСКОГО ОДЗ НА ВХОДЕ ---
+    if Variable.EFFICIENCY in known_values:
+        eta_val = known_values[Variable.EFFICIENCY]
+        if isinstance(eta_val, (int, float)):
+            if 1.0 < eta_val <= 100.0:
+                known_values[Variable.EFFICIENCY] = eta_val / 100.0
+            elif eta_val <= 0 or eta_val > 100.0:
+                return {"error": f"Физическая ошибка: КПД не может быть равен {eta_val}."}
+
+    strictly_positive = {
+        Variable.MASS: "Масса (m)",
+        Variable.MASS_1: "Масса (m1)",
+        Variable.MASS_2: "Масса (m2)",
+        Variable.WAVELENGTH: "Длина волны",
+        Variable.FREQ_LIGHT: "Частота излучения",
+        Variable.RADIUS: "Радиус",
+    }
+    for var_key, var_label in strictly_positive.items():
+        if var_key in known_values and isinstance(known_values[var_key], (int, float)):
+            if known_values[var_key] <= 0:
+                return {"error": f"Физическая ошибка в Дано: {var_label} должна быть больше нуля."}
+
+    if Variable.TIME in known_values and isinstance(known_values[Variable.TIME], (int, float)):
+        if known_values[Variable.TIME] < 0:
+            return {"error": "Физическая ошибка в Дано: время (t) не может быть отрицательным."}
+            
     user_vars: set[Variable] = set()
 
     for raw_k, raw_v in given.items():
@@ -177,24 +214,23 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
             res_var = formula.result_variable
 
             # Физическое ограничение 1: энергия торможения E_k = m*v0^2/2 только при v0 != 0
-            if (
-                formula.name == "Начальная кинетическая энергия при торможении"
-                and known_values.get(Variable.VELOCITY_0) == 0.0
-            ):
+            if formula.pretty == "E_k = m·v0² / 2" and known_values.get(Variable.VELOCITY_0) == 0.0:
                 continue
 
             # Физическое ограничение 2: формула a = 2S/t^2 применима только если нет ненулевой v0
-            if (
-                formula.pretty == "a = 2·S / t²"
-                and Variable.VELOCITY_0 in user_vars
-                and known_values.get(Variable.VELOCITY_0) != 0.0
-            ):
+            if formula.pretty == "a = 2·S / t²" and Variable.VELOCITY_0 in user_vars and known_values.get(Variable.VELOCITY_0) != 0.0:
                 continue
 
-            # Физическое ограничение 3: угол наклона мотоциклиста α = arctg(μ) не должен
-            # создавать фантомную наклонную плоскость, если угол α не является целью задачи
+            # Физическое ограничение 3: фантомная наклонная плоскость
             if formula.pretty == "α = arctg(μ)" and target_var != Variable.ANGLE:
                 continue
+
+            # Физическое ограничение 4: Изоляция квантового моста. 
+            # Запрещаем U = U_stop, если в задаче нет квантового контекста.
+            if formula.pretty == "U = U_stop":
+                quantum_context = {Variable.WORK_FUNCTION, Variable.PHOTON_ENERGY, Variable.FREQ_LIGHT, Variable.WAVELENGTH}
+                if not any(q in user_vars for q in quantum_context) and target_var not in quantum_context:
+                    continue
 
             # Прямой шаг
             if res_var not in known_values and all(req in known_vars for req in formula.requires):
@@ -218,13 +254,14 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
                         miss_var not in known_vars
                         and miss_var not in updates_in_layer
                         and miss_var
-                        not in (
-                            Variable.X_FUNC,
-                            Variable.V_FUNC,
-                            Variable.A_FUNC,
-                            Variable.F_FUNC,
-                        )
+                        not in (Variable.X_FUNC, Variable.V_FUNC, Variable.A_FUNC, Variable.F_FUNC)
                     ):
+                        # Запрет круговой тавтологии E_k(v_0) -> v
+                        if formula.result_variable == Variable.KINETIC_ENERGY and Variable.VELOCITY in formula.requires:
+                            ek_source = derivation.get(Variable.KINETIC_ENERGY)
+                            if ek_source and Variable.VELOCITY_0 in ek_source[1].requires:
+                                continue
+                                
                         deps = [res_var] + [r for r in formula.requires if r != miss_var]
                         cand_score = _tree_stats(deps, "inverse", formula)
                         updates_in_layer[miss_var] = ("inverse", formula, cand_score)
@@ -269,22 +306,27 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
             mode, formula = derivation[out_var]
             if mode == "direct":
                 val = formula.calc(state)
-                state[out_var] = val
-                unit = VARIABLE_UNITS.get(out_var, "")
-                val_str = f"{_format_val(val)} {unit}".strip()
-                steps_str.append(f"{idx}. {formula.pretty} ➔ {val_str}")
             else:
                 known_sub = {r: state[r] for r in formula.requires if r != out_var}
                 expected_y = state[formula.result_variable]
                 val = math_engine.solve_implicit_for_var(
                     formula.calc, known_sub, out_var, expected_y
                 )
-                state[out_var] = val
-                unit = VARIABLE_UNITS.get(out_var, "")
-                val_str = f"{_format_val(val)} {unit}".strip()
-                steps_str.append(
-                    f"{idx}. Из [{formula.pretty}] выражаем {get_display_name(out_var)} ➔ {val_str}"
-                )
+
+            # --- ФИЗИЧЕСКИЙ ФИЛЬТР ---
+            if isinstance(val, (int, float)):
+                if out_var == Variable.TIME and val < 0:
+                    return {"error": f"Физическое противоречие: получено отрицательное время t = {val:.4g} с."}
+
+            state[out_var] = val
+            unit = VARIABLE_UNITS.get(out_var, "")
+            val_str = f"{_format_val(val)} {unit}".strip()
+
+            if mode == "direct":
+                steps_str.append(f"{idx}. {formula.pretty} ➔ {val_str}")
+            else:
+                steps_str.append(f"{idx}. Из [{formula.pretty}] выражаем {get_display_name(out_var)} ➔ {val_str}")
+                
     except Exception as exc:
         return {"error": f"Математическая ошибка при расчёте: {exc}"}
 

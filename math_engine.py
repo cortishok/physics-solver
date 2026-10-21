@@ -1,6 +1,8 @@
 import ast
 import math
 import operator
+from typing import Callable, Dict, Any
+from variables import Variable
 
 SAFE_OPERATORS = {
     ast.Add: operator.add,
@@ -272,35 +274,107 @@ def solve_linear_2x2(a1: float, b1: float, c1: float, a2: float, b2: float, c2: 
     y = (a1 * c2 - a2 * c1) / det
     return x, y
 
+# Переменные, которые по законам физики не могут быть отрицательными
+NON_NEGATIVE_VARS = {
+    Variable.TIME,
+    Variable.MASS,
+    Variable.MASS_1,
+    Variable.MASS_2,
+    Variable.VELOCITY,
+    Variable.VELOCITY_0,
+    Variable.RADIUS,
+    Variable.DISPLACEMENT,
+    Variable.HEIGHT,
+    Variable.WIRE_LENGTH,
+    Variable.WAVELENGTH,
+    Variable.FREQ_LIGHT,
+    Variable.FREQUENCY_ROT,
+    Variable.PERIOD,
+    Variable.PARTICLES_COUNT,
+}
 
-def solve_implicit_for_var(calc_fn, known_args: dict, target_var, expected_res: float) -> float:
+def solve_implicit_for_var(
+    calc_func: Callable[[Dict[Variable, Any]], float],
+    known_vars: Dict[Variable, Any],
+    target_var: Variable,
+    expected_result: float,
+) -> float:
     """
-    Численно-аналитическое обращение формулы:
-    находит значение target_var, при котором calc_fn(**known_args, target_var=x) == expected_res.
-    Используется для автоматического обращения формул без ручного дублирования.
+    Численно выражает неизвестную переменную target_var из формулы calc_func.
+    Решает уравнение: calc_func(known_vars + {target_var: x}) - expected_result = 0.
     """
-    def f(x):
-        env = dict(known_args)
-        env[target_var] = x
-        return calc_fn(env) - expected_res
+    must_be_positive = target_var in NON_NEGATIVE_VARS
 
-    # Проверяем линейность / монотонность на положительной полуоси (основная область физики)
-    guesses = [1.0, 2.0, 10.0, 0.1, 100.0]
-    for g0 in guesses:
-        try:
-            x0 = g0
-            for _ in range(40):
-                y0 = f(x0)
-                if abs(y0) < 1e-9:
-                    return x0
-                dx = max(abs(x0) * 1e-6, 1e-8)
-                dy = (f(x0 + dx) - y0) / dx
-                if abs(dy) < 1e-15:
+    def f(x: float) -> float:
+        test_env = dict(known_vars)
+        test_env[target_var] = x
+        return float(calc_func(test_env)) - expected_result
+
+    # 1. Проверка на чистый ноль (защита от машинного мусора вида -1.7e-12 при v = v0)
+    try:
+        val_at_zero = f(0.0)
+        # Если при подстановке 0 левая и правая части совпадают с точностью до 1e-11 от масштаба числа
+        scale = max(1.0, abs(expected_result))
+        if abs(val_at_zero) <= 1e-11 * scale:
+            return 0.0
+    except Exception:
+        pass
+
+    # 2. Набор стартовых точек разного масштаба (от микромира до космоса)
+    if must_be_positive:
+        guesses = [1.0, 10.0, 0.1, 100.0, 1e-5, 1e5, 1e-15, 1e15, 1e-27]
+    else:
+        guesses = [1.0, 10.0, 0.1, -1.0, -10.0, 100.0, 1e-5, 1e5, 1e-18, 1e15]
+
+    for start_x in guesses:
+        x = start_x
+        for _ in range(80):
+            try:
+                y = f(x)
+            except Exception:
+                break
+
+            # Динамический порог точности (работает и для 10^-34 Дж, и для 10^13 Дж)
+            tol = max(1e-12 * abs(expected_result), 1e-30)
+            if abs(y) <= tol:
+                # Если величина обязана быть >= 0, проверяем, подходит ли +|x| (симметрия параболы)
+                if must_be_positive and x < 0:
+                    try:
+                        if abs(f(abs(x))) <= tol:
+                            return abs(x)
+                    except Exception:
+                        pass
                     break
-                x1 = x0 - y0 / dy
-                if abs(x1 - x0) < 1e-9 and abs(f(x1)) < 1e-7:
-                    return x1
-                x0 = x1
-        except Exception:
-            continue
-    raise ValueError("Не удалось однозначно обратить уравнение")
+                # Отрезаем микро-погрешность около нуля для обычных макро-величин
+                if abs(x) < 1e-11 and abs(expected_result) >= 1.0:
+                    try:
+                        if abs(f(0.0)) <= 1e-9 * abs(expected_result):
+                            return 0.0
+                    except Exception:
+                        pass
+                return x
+
+            # Численный шаг для расчёта производной (касательной)
+            h = max(abs(x) * 1e-7, 1e-15)
+            try:
+                y_plus = f(x + h)
+                df = (y_plus - y) / h
+            except Exception:
+                break
+
+            if abs(df) == 0.0:
+                break
+
+            x_next = x - y / df
+
+            # Если ищем время/массу/скорость и шаг улетел в минус — отражаем в положительную область
+            if must_be_positive and x_next < 0:
+                x_next = abs(x) * 0.5 if x > 0 else 0.1
+
+            if abs(x_next - x) <= max(1e-12 * abs(x), 1e-30):
+                if abs(f(x_next)) <= max(1e-9 * abs(expected_result), 1e-26):
+                    return max(0.0, x_next) if must_be_positive else x_next
+                break
+            x = x_next
+
+    raise ValueError(f"Не удалось численно выразить {target_var.value} (возможно, нет физического корня)")

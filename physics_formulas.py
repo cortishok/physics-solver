@@ -13,6 +13,7 @@ class Formula:
     calc: Callable[[dict], float | str]
     pretty: str
     is_bridge: bool = False
+    forward_only: bool = False  # <--- Вот то, чего не хватало!
 
 
 def _deg_sin(deg: float) -> float:
@@ -36,6 +37,28 @@ def _safe_sqrt(x: float) -> float:
 
 
 FORMULAS_LIST: list[Formula] = [
+    # Связь высоты наклонной плоскости и пройденного вдоль неё пути: S = h / sin(alpha)
+    Formula(
+        name="Путь по наклонной плоскости через высоту", # <--- Добавил забытое имя
+        result_variable=Variable.DISPLACEMENT,
+        requires=(Variable.HEIGHT, Variable.ANGLE),
+        calc=lambda d: d[Variable.HEIGHT] / math.sin(math.radians(d[Variable.ANGLE])),
+        pretty="S = h / sin(α)",
+        forward_only=True,
+    ),
+    # Основное уравнение кинематики с начальной скоростью и ускорением: S = v0*t + a*t^2 / 2
+    Formula(
+        name="Путь при равноускоренном движении", # <--- Добавил забытое имя
+        result_variable=Variable.DISPLACEMENT,
+        requires=(Variable.VELOCITY_0, Variable.TIME, Variable.ACCELERATION),
+        calc=lambda d: d[Variable.VELOCITY_0] * d[Variable.TIME]
+        + 0.5 * d[Variable.ACCELERATION] * (d[Variable.TIME] ** 2),
+        pretty="S = v0·t + a·t² / 2",
+    ),
+
+    # =========================================================================
+    # 1. МАТАНАЛИЗ И АНАЛИТИЧЕСКИЕ ФУНКЦИИ (Задание №2 и интегралы)
+    # =========================================================================
     # =========================================================================
     # 1. МАТАНАЛИЗ И АНАЛИТИЧЕСКИЕ ФУНКЦИИ (Задание №2 и интегралы)
     # =========================================================================

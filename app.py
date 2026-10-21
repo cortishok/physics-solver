@@ -1,169 +1,164 @@
+import re
 import flet as ft
 import solver
-
+from variables import UI_SUGGESTIONS
 
 def main(page: ft.Page):
-    page.title = "Физический Солвер"
+    page.title = "Физический Солвер ЕГЭ"
     page.theme_mode = ft.ThemeMode.DARK
-    page.scroll = ft.ScrollMode.ADAPTIVE
+    page.window_width = 450
+    page.window_height = 800
+    page.scroll = "adaptive"
 
-    page.appbar = ft.AppBar(
-        leading=ft.Icon(ft.icons.BOLT, color=ft.colors.ORANGE_500),
-        title=ft.Text("Физический Солвер", weight=ft.FontWeight.BOLD),
-        center_title=True,
-        bgcolor=ft.colors.SURFACE_VARIANT,
-    )
+    # --- СОСТОЯНИЕ АВТОКОМПЛИТА ---
+    active_input_type = None  # 'given' или 'target'
+    active_textfield = None
 
-    input_given = ft.TextField(
-        label="Дано (каждая величина с новой строки)",
+    def show_suggestions(e, input_type):
+        nonlocal active_input_type, active_textfield
+        active_input_type = input_type
+        active_textfield = e.control
+        
+        text = active_textfield.value
+        if not text:
+            suggestions_card.visible = False
+            page.update()
+            return
+
+        # Берем только последнюю строку (где сейчас каретка)
+        current_line = text.split('\n')[-1]
+        
+        # Если в строке "Дано" уже есть знак "=", значит человек вводит число - прячем подсказки
+        if input_type == 'given' and '=' in current_line:
+            suggestions_card.visible = False
+            page.update()
+            return
+
+        # Ищем последнее слово (всё, что печатается до пробела)
+        match = re.search(r'\S+$', text)
+        if not match:
+            suggestions_card.visible = False
+            page.update()
+            return
+
+        last_word = match.group().lower()
+
+        # Поиск совпадений (и по английскому ключу, и по русскому описанию)
+        matches = []
+        for key, desc in UI_SUGGESTIONS.items():
+            if last_word in key.lower() or last_word in desc.lower():
+                matches.append((key, desc))
+
+        if not matches:
+            suggestions_card.visible = False
+            page.update()
+            return
+
+        # Заполняем выпадающий список (показываем топ-5 совпадений)
+        suggestions_list.controls.clear()
+        for key, desc in matches[:5]:
+            suggestions_list.controls.append(
+                ft.ListTile(
+                    title=ft.Text(desc, size=14),
+                    leading=ft.Icon(ft.icons.BOLT, color=ft.colors.BLUE_400),
+                    on_click=lambda e, k=key: apply_suggestion(k)
+                )
+            )
+
+        suggestions_card.visible = True
+        page.update()
+
+    def apply_suggestion(key):
+        if not active_textfield:
+            return
+
+        # Умная вставка: для Дано ставим знак равно, для Найти - просто пробел
+        insert_text = f"{key} = " if active_input_type == 'given' else f"{key} "
+        current_text = active_textfield.value
+
+        # Заменяем недописанное слово на выбранную подсказку
+        match = re.search(r'\S+$', current_text)
+        if match:
+            new_text = current_text[:match.start()] + insert_text
+        else:
+            new_text = current_text + insert_text
+
+        active_textfield.value = new_text
+        active_textfield.focus()
+        suggestions_card.visible = False
+        page.update()
+
+    # --- ЭЛЕМЕНТЫ ИНТЕРФЕЙСА ---
+    given_input = ft.TextField(
+        label="Дано (вводите каждую величину с новой строки)",
+        hint_text="Например: начните писать 'масс...'",
         multiline=True,
         min_lines=4,
-        hint_text="m = 10\nv = 55\nS = 100",
-    )
-    input_find = ft.TextField(label="Что найти?", hint_text="t или E_k")
-    results_col = ft.Column(spacing=8)
-
-    # Кнопки быстрого ввода
-    def on_quick_btn_click(e):
-        val = input_given.value or ""
-        if val and not val.endswith("\n"):
-            val += "\n"
-        input_given.value = val + f"{e.control.text} = "
-        input_given.focus()
-        page.update()
-
-    quick_buttons = ft.Row(
-        controls=[
-            ft.OutlinedButton(text=btn, on_click=on_quick_btn_click)
-            for btn in ["m", "v", "t", "F", "p", "S", "h", "a", "x(t)"]
-        ],
-        scroll=ft.ScrollMode.AUTO,
+        text_size=16,
+        on_change=lambda e: show_suggestions(e, 'given')
     )
 
-    # Автоподстановка по подсказкам
-    def on_hint_click(e):
-        variable = e.control.data
-        val = input_given.value or ""
-        if val and not val.endswith("\n"):
-            val += "\n"
-        input_given.value = val + f"{variable} = "
-        results_col.controls.clear()
-        input_given.focus()
+    target_input = ft.TextField(
+        label="Найти",
+        hint_text="Например: начните писать 'скор...'",
+        text_size=16,
+        on_change=lambda e: show_suggestions(e, 'target')
+    )
+
+    # Выпадающий список подсказок (шторка)
+    suggestions_list = ft.Column(spacing=0)
+    suggestions_card = ft.Card(
+        content=suggestions_list,
+        visible=False,
+        elevation=8,
+        margin=ft.margin.only(top=-10, bottom=10) # Визуально прилипает к текстовому полю
+    )
+
+    output_text = ft.Text(selectable=True, size=16)
+
+    def solve_clicked(e):
+        output_text.value = "⏳ Решаю..."
         page.update()
 
-    def on_input_change(e):
-        text = (e.control.value or "").strip().lower()
-        if not text:
-            return
-
-        last_line = text.split("\n")[-1].strip()
-        results_col.controls.clear()
-
-        hints_dict = {
-            "им": ("Импульс (p)", "p"),
-            "си": ("Сила (F)", "F"),
-            "ск": ("Скорость (v)", "v"),
-            "вр": ("Время (t)", "t"),
-            "ма": ("Масса (m)", "m"),
-            "ус": ("Ускорение (a)", "a"),
-            "пу": ("Путь/Расстояние (S)", "S"),
-            "вы": ("Высота (h)", "h"),
-        }
-
-        for prefix, (title_text, var_key) in hints_dict.items():
-            if last_line.startswith(prefix) or last_line == prefix:
-                results_col.controls.append(
-                    ft.ListTile(
-                        title=ft.Text(title_text),
-                        leading=ft.Icon(ft.icons.ADD, color=ft.colors.PURPLE_400),
-                        data=var_key,
-                        on_click=on_hint_click,
-                    )
-                )
-                break
-        page.update()
-
-    input_given.on_change = on_input_change
-
-    # РЕАЛЬНЫЙ РАСЧЕТ БЕЗ ЗАГЛУШЕК
-    def calculate(e):
-        results_col.controls.clear()
-
-        raw_given_text = input_given.value or ""
-        target_raw = (input_find.value or "").strip()
-
-        if not target_raw:
-            results_col.controls.append(
-                ft.Text("Укажите, какую величину нужно найти!", color=ft.colors.RED_400)
-            )
-            page.update()
-            return
-
-        # Парсим входные строки вида 'm = 10'
         given_dict = {}
-        for line in raw_given_text.splitlines():
-            line = line.strip()
-            if not line or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            given_dict[k.strip()] = v.strip()
+        for line in given_input.value.strip().split('\n'):
+            if '=' in line:
+                k, v = line.split('=', 1)
+                given_dict[k.strip()] = v.strip()
 
-        if not given_dict:
-            results_col.controls.append(
-                ft.Text("Заполните поле 'Дано' (например: m = 10)", color=ft.colors.RED_400)
-            )
+        target = target_input.value.strip()
+
+        if not target:
+            output_text.value = "❌ Ошибка: Укажите переменную 'Найти'."
             page.update()
             return
 
-        # Запуск движка
-        res = solver.solve_and_calculate(given_dict, target_raw)
+        res = solver.solve_and_calculate(given_dict, target)
 
         if res.get("error"):
-            results_col.controls.append(
-                ft.Text(f"Ошибка: {res['error']}", color=ft.colors.RED_400, weight=ft.FontWeight.BOLD)
-            )
+            output_text.value = f"❌ Ошибка:\n{res['error']}"
         else:
-            if res.get("steps"):
-                results_col.controls.append(ft.Text("Шаги решения:", weight=ft.FontWeight.BOLD))
-                for step in res["steps"]:
-                    results_col.controls.append(
-                        ft.Text(
-                            f"{step['step']}. {step['formula']} ➔ {step['result_str']}",
-                            size=14,
-                        )
-                    )
-                results_col.controls.append(ft.Divider())
-
-            final_str = res.get("final_answer_str") or str(res.get("result"))
-            results_col.controls.append(
-                ft.Text(
-                    f"Ответ: {target_raw} = {final_str}",
-                    color=ft.colors.GREEN_400,
-                    weight=ft.FontWeight.BOLD,
-                    size=18,
-                )
-            )
+            steps = "\n".join(res["steps"])
+            output_text.value = f"✅ ОТВЕТ: {res['final_answer_str']}\n\nШАГИ:\n{steps}"
 
         page.update()
 
-    calc_btn = ft.ElevatedButton(
-        "Рассчитать",
-        icon=ft.icons.PLAY_ARROW,
-        on_click=calculate,
-        bgcolor=ft.colors.BLUE_600,
-        color=ft.colors.WHITE,
+    solve_btn = ft.ElevatedButton(
+        "Решить", 
+        icon=ft.icons.CALCULATE, 
+        on_click=solve_clicked,
+        height=50,
+        width=float('inf') # Кнопка на всю ширину
     )
 
     page.add(
-        ft.Text("Быстрый ввод:"),
-        quick_buttons,
-        input_given,
-        input_find,
-        calc_btn,
-        ft.Divider(),
-        results_col,
+        ft.Text("Физический Солвер ЕГЭ", size=24, weight="bold"),
+        given_input,
+        target_input,
+        suggestions_card,
+        solve_btn,
+        ft.Divider(height=30),
+        output_text
     )
 
-
-if __name__ == "__main__":
-    ft.app(target=main)
+ft.app(target=main)

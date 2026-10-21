@@ -1,324 +1,300 @@
-# solver.py
-from collections import deque
-from typing import Dict, List, Optional, Set, Tuple, Union, Any
+from variables import (
+    Variable,
+    VARIABLE_DISPLAY_NAMES,
+    VARIABLE_UNITS,
+    STRING_TO_VARIABLE,
+)
+from units import parse_value_with_unit
+from physics_formulas import FORMULAS_LIST, Formula
+import math_engine
 
-from variables import Variable
-from physics_formulas import FORMULAS, Formula
-from units import parse_any_input, UNITS
-from math_engine import Expr
+DEFAULT_CONSTANTS = {
+    Variable.G_ACCEL: 9.81,
+    Variable.SPEED_OF_LIGHT: 3.0e8,
+    Variable.PLANCK: 6.626e-34,
+    Variable.ELEM_CHARGE: 1.602e-19,
+    Variable.GAS_CONSTANT: 8.314,
+}
 
-
-# Таблица однозначного сопоставления строкового ввода с физическими сущностями
-STRING_TO_VARIABLE: Dict[str, Variable] = {
-    # Кинематика и механика
-    "s": Variable.DISTANCE,
-    "S": Variable.DISTANCE,
-    "h": Variable.HEIGHT,
-    "H": Variable.HEIGHT,
-    "l": Variable.LENGTH,
-    "L": Variable.LENGTH,
-    "r": Variable.RADIUS,
-    "R_geom": Variable.RADIUS,
-    "v": Variable.VELOCITY,
-    "V_speed": Variable.VELOCITY,
-    "v0": Variable.INITIAL_VELOCITY,
-    "a": Variable.ACCELERATION,
-    "a_n": Variable.CENTRIPETAL_ACC,
-    "t": Variable.TIME,
-    "dt": Variable.TIME_DELTA,
-    "m": Variable.MASS,
-    "F": Variable.FORCE,
-    "F_tr": Variable.FRICTION_FORCE,
-    "F_тяж": Variable.GRAVITY_FORCE,
-    "F_упр": Variable.ELASTIC_FORCE,
-    "k": Variable.STIFFNESS,
-    "dx": Variable.ELONGATION,
-    "x_elong": Variable.ELONGATION,
-    "mu": Variable.FRICTION_COEFF,
-    "M_torque": Variable.TORQUE,
-    "omega": Variable.ANGULAR_VELOCITY,
-    "T_period": Variable.PERIOD,
-    "nu_freq": Variable.FREQUENCY,
-
-    # Строгое разделение: p (импульс) vs P (давление)[cite: 1]
-    "p": Variable.MOMENTUM,
-    "p_impulse": Variable.MOMENTUM,
-    "P": Variable.PRESSURE,
-    "P_pressure": Variable.PRESSURE,
-
-    # Энергия, работа и мощность
-    # 'A' — строго механическая работа, исключая коллизии[cite: 1, 5]
-    "A": Variable.WORK,
-    "А": Variable.WORK,
-    "A_work": Variable.WORK,
-    "A_useful": Variable.USEFUL_WORK,
-    "A_total": Variable.TOTAL_WORK,
-    "E_k": Variable.KINETIC_ENERGY,
-    "E_p": Variable.POTENTIAL_ENERGY,
-    "N": Variable.POWER,
-    "eta": Variable.EFFICIENCY,
-
-    # Работа выхода (строго через индекс)[cite: 5]
-    "A_vyh": Variable.WORK_FUNCTION,
-    "Aвых": Variable.WORK_FUNCTION,
-    "A_вых": Variable.WORK_FUNCTION,
-
-    # МКТ и термодинамика
-    "T": Variable.TEMPERATURE,
-    "T1": Variable.TEMP_HOT,
-    "T2": Variable.TEMP_COLD,
-    "V": Variable.VOLUME,
-    "rho": Variable.DENSITY,
-    "nu": Variable.MOLE_AMOUNT,
-    "U": Variable.INTERNAL_ENERGY,
-    "c": Variable.SPECIFIC_HEAT,
-    "lambda_fusion": Variable.FUSION_HEAT,
-    "L_vapor": Variable.VAPOR_HEAT,
-    "n_conc": Variable.CONCENTRATION,
-    "E_mol": Variable.MOLECULE_KINETIC,
-    "phi_hum": Variable.HUMIDITY,
-    "P_sat": Variable.SATURATED_VAPOR_PRESSURE,
-
-    # Строгое разделение: q (заряд) vs Q (теплота)[cite: 1]
-    "q": Variable.CHARGE,
-    "q1": Variable.CHARGE_1,
-    "q2": Variable.CHARGE_2,
-    "Q": Variable.HEAT,
-    "Q1": Variable.HEAT_HOT,
-    "Q2": Variable.HEAT_COLD,
-
-    # Электродинамика и магнетизм
-    "I": Variable.CURRENT,
-    "U_volt": Variable.VOLTAGE,
-    "R": Variable.RESISTANCE,
-    "r_int": Variable.INTERNAL_RESISTANCE,
-    "r_internal": Variable.INTERNAL_RESISTANCE,
-    "E_emf": Variable.EMF,
-    "eps": Variable.EMF,
-    "C": Variable.CAPACITANCE,
-    "E_field": Variable.ELECTRIC_FIELD,
-    "rho_el": Variable.RESISTIVITY,
-    "S_wire": Variable.WIRE_AREA,
-    "B": Variable.MAGNETIC_FIELD,
-    "Phi": Variable.MAGNETIC_FLUX,
-    "dPhi": Variable.FLUX_DELTA,
-    "L_ind": Variable.INDUCTANCE,
-    "F_a": Variable.AMPERE_FORCE,
-    "F_l": Variable.LORENTZ_FORCE,
-    "F_c": Variable.COULOMB_FORCE,
-
-    # Оптика, кванты и ядра
-    "n": Variable.REFRACTIVE_INDEX,
-    "lambda": Variable.WAVELENGTH,
-    "lambda_wave": Variable.WAVELENGTH,
-    "d_opt": Variable.OBJECT_DISTANCE,
-    "f_opt": Variable.IMAGE_DISTANCE,
-    "F_opt": Variable.FOCAL_LENGTH,
-    "D_opt": Variable.OPTICAL_POWER,
-    "d_grating": Variable.DIFFRACTION_D,
-    "k_order": Variable.DIFFRACTION_ORDER,
-    "E_photon": Variable.PHOTON_ENERGY,
-    "U_stop": Variable.STOPPING_VOLTAGE,
-    "nu_red": Variable.RED_LIMIT_FREQ,
-    "T_half": Variable.HALF_LIFE,
-    "N0": Variable.INITIAL_PARTICLES,
-    "A_act": Variable.ACTIVITY,
-
-    # Функциональные переменные матанализа
-    "x(t)": Variable.POSITION_FUNC,
-    "x_t": Variable.POSITION_FUNC,
-    "v(t)": Variable.VELOCITY_FUNC,
-    "v_t": Variable.VELOCITY_FUNC,
-    "a(t)": Variable.ACCELERATION_FUNC,
-    "a_t": Variable.ACCELERATION_FUNC,
-    "F(x)": Variable.FORCE_FUNC,
-    "F_x": Variable.FORCE_FUNC,
-    "i(t)": Variable.CURRENT_FUNC,
-    "I(t)": Variable.CURRENT_FUNC,
-    "Phi(t)": Variable.MAGNETIC_FLUX_FUNC,
-    "phi(t)": Variable.MAGNETIC_FLUX_FUNC,
-
-    # Пределы интегрирования
-    "x1": Variable.COORD_START,
-    "x_start": Variable.COORD_START,
-    "x2": Variable.COORD_END,
-    "x_end": Variable.COORD_END,
-    "t1": Variable.TIME_START,
-    "t_start": Variable.TIME_START,
-    "t2": Variable.TIME_END,
-    "t_end": Variable.TIME_END,
-    "m1": Variable.MASS_1,
-    "m2": Variable.MASS_2,
-   
-    # Недостающие переменные для тестов
-    "S_area": Variable.AREA,
-    "F_grav": Variable.GRAVITATIONAL_FORCE,
-    "v_cosmic_1": Variable.FIRST_COSMIC_VEL,
-    "E_mech": Variable.MECHANICAL_ENERGY,
-    "F_arch": Variable.ARCHIMEDES_FORCE,
-    "P_hydro": Variable.HYDROSTATIC_PRESSURE,
-    "eta_carnot": Variable.CARNOT_EFFICIENCY,
-    "I_sc": Variable.SHORT_CIRCUIT_CURRENT,
-    "W_el": Variable.ELECTRIC_ENERGY,
-    "P_el": Variable.ELECTRIC_POWER,
-    "Q_joule": Variable.JOULE_HEAT,
-    "E_ind": Variable.INDUCED_EMF,
-    "W_mag": Variable.MAGNETIC_ENERGY,
-    "T_thomson": Variable.THOMSON_PERIOD,
-    "v_wave": Variable.WAVE_SPEED,
-    "Gamma": Variable.MAGNIFICATION,
-    "v_light": Variable.LIGHT_SPEED_MEDIUM,
-    "p_photon": Variable.PHOTON_MOMENTUM,
-    "E_k_el": Variable.ELECTRON_KINETIC,
-    "N_particles": Variable.PARTICLE_COUNT,
-    "E_rest": Variable.REST_ENERGY,
-    "delta_m": Variable.MASS_DEFECT,
-    "delta_E": Variable.ENERGY_DEFECT,
-    "p_vapor": Variable.VAPOR_PRESSURE,
-    "rho_vapor": Variable.VAPOR_DENSITY,
-    "rho_sat": Variable.SATURATED_VAPOR_DENSITY,
-    "lambda_decay": Variable.DECAY_CONSTANT,
-    "R_radius": Variable.RADIUS,
-    "delta_T": Variable.TEMPERATURE,
-    "Q2_cold": Variable.HEAT_COLD,
-    "Q1_hot": Variable.HEAT_HOT,
-
-
+ELECTRICAL_CONTEXT_KEYS = {
+    "I", "U", "U_volt", "Q_joule", "P_el", "E_ind", "E_emf",
+    "U_stop", "A_vyh", "l", "freq_rot", "C", "L_ind", "R_ohm",
 }
 
 
-def resolve_variable(name: str) -> Optional[Variable]:
-    """Разрешает строковое имя в сущность Variable с сохранением регистра."""
-    cleaned = name.strip()
-    return STRING_TO_VARIABLE.get(cleaned)
-
-
 def get_display_name(var: Variable) -> str:
-    """Возвращает каноническое строковое имя переменной для вывода ответа."""
-    for str_key, var_val in STRING_TO_VARIABLE.items():
-        if var_val == var:
-            return str_key
-    return var.value
+    return VARIABLE_DISPLAY_NAMES.get(var, var.value)
 
 
-def format_physical_value(val: Union[float, Expr], unit: str) -> str:
-    """Форматирует числовое значение или символьное выражение для консоли."""
-    if isinstance(val, Expr):
-        return f"{val} [{unit}]" if unit else str(val)
-    if isinstance(val, (int, float)):
-        if abs(val) >= 1e5 or (0 < abs(val) < 1e-3):
-            return f"{val:.4e} {unit}".strip()
-        if float(val).is_integer():
-            return f"{int(val)} {unit}".strip()
-        return f"{val:.4g} {unit}".strip()
-    return f"{val} {unit}".strip()
+def _format_val(val) -> str:
+    if isinstance(val, str):
+        return val
+    if abs(val) >= 1e5 or (0 < abs(val) < 1e-3):
+        return f"{val:.4e}"
+    if abs(val - round(val)) < 1e-7:
+        return str(int(round(val)))
+    return f"{val:.4f}".rstrip("0").rstrip(".")
 
 
-def build_solution_plan(available_vars: List[Variable], target_var: Variable) -> Optional[List[Formula]]:
-    """
-    Планировщик на основе обхода в ширину (BFS).
-    Ищет кратчайшую последовательность формул от известных величин к целевой.
-    """
-    if target_var in available_vars:
-        return []
-
-    # Состояние очереди: (множество_известных_переменных, цепочка_формул)
-    queue: deque[Tuple[Set[Variable], List[Formula]]] = deque([
-        (set(available_vars), [])
-    ])
-    
-    # Множество посещенных наборов переменных для защиты от зацикливания
-    visited_states: Set[frozenset] = {frozenset(available_vars)}
-
-    all_formulas = list(FORMULAS.values())
-
-    while queue:
-        current_vars, plan = queue.popleft()
-
-        for formula in all_formulas:
-            # Проверяем, можно ли применить данную формулу
-            if all(req in current_vars for req in formula.requires):
-                res_var = formula.result_variable
-
-                # Если формула дает целевую переменную — решение найдено
-                if res_var == target_var:
-                    return plan + [formula]
-
-                # Если формула порождает новую промежуточную переменную
-                if res_var not in current_vars:
-                    new_vars = current_vars | {res_var}
-                    frozen_new = frozenset(new_vars)
-
-                    if frozen_new not in visited_states:
-                        visited_states.add(frozen_new)
-                        queue.append((new_vars, plan + [formula]))
-
-    return None
+def _resolve_variable_name(k_str: str, raw_val: str, all_keys: set[str]) -> Variable | None:
+    """Разрешение коллизии имени 'R' (Радиус vs Сопротивление)."""
+    if k_str == "R":
+        val_s = str(raw_val).strip()
+        parts = val_s.split()
+        unit_part = parts[-1] if len(parts) > 1 else ""
+        if unit_part in ("м", "см", "мм", "км"):
+            return Variable.RADIUS
+        if unit_part in ("Ом", "кОм"):
+            return Variable.RESISTANCE
+        if not (all_keys & ELECTRICAL_CONTEXT_KEYS):
+            return Variable.RADIUS
+        return Variable.RESISTANCE
+    return STRING_TO_VARIABLE.get(k_str)
 
 
-def solve_and_calculate(given_raw: Dict[str, str], target_raw: str) -> Dict[str, Any]:
-    """
-    Главная точка входа: парсит входные данные, строит план,
-    рассчитывает значения и возвращает структурированный ответ (JSON-подобный словарь)
-    для интеграции с графическим интерфейсом.
-    """
-    response = {
-        "target": target_raw,
-        "result": None,
-        "final_answer_str": None,
-        "steps": [],
-        "error": None
+def solve_and_calculate(given: dict, target_str: str) -> dict:
+    target_clean = str(target_str).strip()
+    all_input_keys = {str(k).strip() for k in given.keys()} | {target_clean}
+
+    target_var = _resolve_variable_name(target_clean, "", all_input_keys)
+    if target_var is None:
+        return {"error": f"Целевая переменная '{target_clean}' не распознана."}
+
+    # 1. Парсинг входного словаря Дано
+    known_values: dict[Variable, float | str] = dict(DEFAULT_CONSTANTS)
+    user_vars: set[Variable] = set()
+
+    for raw_k, raw_v in given.items():
+        k_str = str(raw_k).strip()
+        var_enum = _resolve_variable_name(k_str, str(raw_v), all_input_keys)
+        if var_enum is None:
+            return {"error": f"Ошибка разбора: неизвестная переменная '{k_str}'"}
+
+        is_func_var = var_enum in (
+            Variable.X_FUNC,
+            Variable.V_FUNC,
+            Variable.A_FUNC,
+            Variable.F_FUNC,
+        )
+        try:
+            parsed_val = parse_value_with_unit(raw_v, is_func=is_func_var)
+            if is_func_var:
+                math_engine.normalize_expr(str(parsed_val))
+            known_values[var_enum] = parsed_val
+            user_vars.add(var_enum)
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    # Контекстная маршрутизация цели
+    if target_var == Variable.MOMENTUM and Variable.FREQ_LIGHT in user_vars:
+        target_var = Variable.MOMENTUM_PHOTONS
+
+    if (
+        target_var == Variable.FORCE
+        and Variable.X_FUNC in user_vars
+        and Variable.TIME not in user_vars
+    ):
+        target_var = Variable.F_FUNC
+
+    if target_var in user_vars:
+        val = known_values[target_var]
+        unit = VARIABLE_UNITS.get(target_var, "")
+        ans_str = f"{_format_val(val)} {unit}".strip()
+        return {
+            "result": val,
+            "final_answer_str": ans_str,
+            "steps": [f"1. {get_display_name(target_var)} = {ans_str} (из условия)"],
+            "error": None,
+        }
+
+    # 2. Послойный вывод с защитой физических областей применимости
+    known_vars = set(known_values.keys())
+    derivation: dict[Variable, tuple[str, Formula]] = {}
+
+    def _depends_on(var: Variable, target: Variable) -> bool:
+        stack = [var]
+        seen = set()
+        while stack:
+            curr = stack.pop()
+            if curr == target:
+                return True
+            if curr in seen or curr in known_values or curr not in derivation:
+                continue
+            seen.add(curr)
+            mode, f = derivation[curr]
+            if mode == "direct":
+                stack.extend(f.requires)
+            else:
+                stack.append(f.result_variable)
+                stack.extend(r for r in f.requires if r != curr)
+        return False
+
+    def _tree_stats(deps: list[Variable], mode: str, formula: Formula) -> tuple:
+        u_vars = set()
+        all_direct = 1 if mode == "direct" else 0
+        bridges = 1 if formula.is_bridge else 0
+        steps_count = 1
+
+        stack = list(deps)
+        seen = set()
+        while stack:
+            curr = stack.pop()
+            if curr in seen:
+                continue
+            seen.add(curr)
+            if curr in user_vars:
+                u_vars.add(curr)
+            if curr in known_values or curr not in derivation:
+                continue
+            steps_count += 1
+            m_curr, f_curr = derivation[curr]
+            if m_curr != "direct":
+                all_direct = 0
+            if f_curr.is_bridge:
+                bridges += 1
+            if m_curr == "direct":
+                stack.extend(f_curr.requires)
+            else:
+                stack.append(f_curr.result_variable)
+                stack.extend(r for r in f_curr.requires if r != curr)
+
+        is_phys_law = 0 if formula.is_bridge else 1
+        return (is_phys_law, all_direct, len(u_vars), -bridges, -steps_count, len(formula.requires))
+
+    def _current_var_score(var: Variable) -> tuple:
+        mode, f = derivation[var]
+        deps = (
+            list(f.requires)
+            if mode == "direct"
+            else [f.result_variable] + [r for r in f.requires if r != var]
+        )
+        return _tree_stats(deps, mode, f)
+
+    for _ in range(8):
+        updates_in_layer: dict[Variable, tuple[str, Formula, tuple]] = {}
+
+        for formula in FORMULAS_LIST:
+            res_var = formula.result_variable
+
+            # Физическое ограничение 1: энергия торможения E_k = m*v0^2/2 только при v0 != 0
+            if (
+                formula.name == "Начальная кинетическая энергия при торможении"
+                and known_values.get(Variable.VELOCITY_0) == 0.0
+            ):
+                continue
+
+            # Физическое ограничение 2: формула a = 2S/t^2 применима только если нет ненулевой v0
+            if (
+                formula.pretty == "a = 2·S / t²"
+                and Variable.VELOCITY_0 in user_vars
+                and known_values.get(Variable.VELOCITY_0) != 0.0
+            ):
+                continue
+
+            # Физическое ограничение 3: угол наклона мотоциклиста α = arctg(μ) не должен
+            # создавать фантомную наклонную плоскость, если угол α не является целью задачи
+            if formula.pretty == "α = arctg(μ)" and target_var != Variable.ANGLE:
+                continue
+
+            # Прямой шаг
+            if res_var not in known_values and all(req in known_vars for req in formula.requires):
+                if any(_depends_on(req, res_var) for req in formula.requires):
+                    continue
+                cand_score = _tree_stats(list(formula.requires), "direct", formula)
+                existing_score = (
+                    updates_in_layer[res_var][2]
+                    if res_var in updates_in_layer
+                    else (_current_var_score(res_var) if res_var in derivation else None)
+                )
+                if existing_score is None or cand_score > existing_score:
+                    updates_in_layer[res_var] = ("direct", formula, cand_score)
+
+            # Обратный алгебраический шаг
+            elif not formula.is_bridge and res_var in known_vars:
+                missing = [req for req in formula.requires if req not in known_vars]
+                if len(missing) == 1:
+                    miss_var = missing[0]
+                    if (
+                        miss_var not in known_vars
+                        and miss_var not in updates_in_layer
+                        and miss_var
+                        not in (
+                            Variable.X_FUNC,
+                            Variable.V_FUNC,
+                            Variable.A_FUNC,
+                            Variable.F_FUNC,
+                        )
+                    ):
+                        deps = [res_var] + [r for r in formula.requires if r != miss_var]
+                        cand_score = _tree_stats(deps, "inverse", formula)
+                        updates_in_layer[miss_var] = ("inverse", formula, cand_score)
+
+        if not updates_in_layer:
+            break
+
+        for v, (m, f, _) in updates_in_layer.items():
+            known_vars.add(v)
+            derivation[v] = (m, f)
+
+    if target_var not in known_vars:
+        return {"error": "Не удалось найти решение: цепочка формул не замкнулась."}
+
+    # 3. Топологическая сортировка дерева вывода для target_var
+    pruned_vars: list[Variable] = []
+    visited_topo: set[Variable] = set()
+
+    def _topo_dfs(v: Variable):
+        if v in visited_topo or v in known_values or v not in derivation:
+            return
+        visited_topo.add(v)
+        mode, formula = derivation[v]
+        if mode == "direct":
+            for req in formula.requires:
+                _topo_dfs(req)
+        else:
+            _topo_dfs(formula.result_variable)
+            for req in formula.requires:
+                if req != v:
+                    _topo_dfs(req)
+        pruned_vars.append(v)
+
+    _topo_dfs(target_var)
+
+    # 4. Пошаговое вычисление
+    state = dict(known_values)
+    steps_str = []
+
+    try:
+        for idx, out_var in enumerate(pruned_vars, 1):
+            mode, formula = derivation[out_var]
+            if mode == "direct":
+                val = formula.calc(state)
+                state[out_var] = val
+                unit = VARIABLE_UNITS.get(out_var, "")
+                val_str = f"{_format_val(val)} {unit}".strip()
+                steps_str.append(f"{idx}. {formula.pretty} ➔ {val_str}")
+            else:
+                known_sub = {r: state[r] for r in formula.requires if r != out_var}
+                expected_y = state[formula.result_variable]
+                val = math_engine.solve_implicit_for_var(
+                    formula.calc, known_sub, out_var, expected_y
+                )
+                state[out_var] = val
+                unit = VARIABLE_UNITS.get(out_var, "")
+                val_str = f"{_format_val(val)} {unit}".strip()
+                steps_str.append(
+                    f"{idx}. Из [{formula.pretty}] выражаем {get_display_name(out_var)} ➔ {val_str}"
+                )
+    except Exception as exc:
+        return {"error": f"Математическая ошибка при расчёте: {exc}"}
+
+    final_val = state[target_var]
+    final_unit = VARIABLE_UNITS.get(target_var, "")
+    final_answer_str = f"{_format_val(final_val)} {final_unit}".strip()
+
+    return {
+        "result": final_val,
+        "final_answer_str": final_answer_str,
+        "steps": steps_str,
+        "error": None,
     }
-
-    target_var = resolve_variable(target_raw)
-    if not target_var:
-        response["error"] = f"Целевая переменная '{target_raw}' не распознана."
-        return response
-
-    # Формируем рабочее окружение с переводом в СИ
-    env: Dict[Variable, Any] = {}
-    for raw_k, raw_v in given_raw.items():
-        var_enum = resolve_variable(raw_k)
-        if not var_enum:
-            continue
-        try:
-            val_si, _ = parse_any_input(raw_v)
-            env[var_enum] = val_si
-        except Exception as e:
-            response["error"] = f"Ошибка разбора величины '{raw_k}': {e}"
-            return response
-
-    # Поиск плана решения
-    plan = build_solution_plan(list(env.keys()), target_var)
-    if plan is None:
-        response["error"] = "Не удалось найти решение: цепочка формул не замкнулась."
-        return response
-
-    # Выполнение формул из плана
-    for idx, formula in enumerate(plan, 1):
-        try:
-            res_val = formula.calc(env)
-            env[formula.result_variable] = res_val
-            unit_str = UNITS.get(formula.result_variable, "")
-            
-            val_repr = format_physical_value(res_val, unit_str)
-            
-            # Сохраняем шаг в виде словаря вместо принта
-            response["steps"].append({
-                "step": idx,
-                "formula": formula.pretty,
-                "result_str": val_repr,
-                "result_var": get_display_name(formula.result_variable)
-            })
-        except Exception as e:
-            response["error"] = f"Ошибка на шаге {idx} ({formula.id}): {e}"
-            return response
-
-    final_result = env.get(target_var)
-    response["result"] = final_result
-    
-    if final_result is not None:
-        target_unit = UNITS.get(target_var, "")
-        response["final_answer_str"] = format_physical_value(final_result, target_unit)
-
-    return response

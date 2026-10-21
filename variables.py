@@ -1,141 +1,230 @@
-# variables.py
 from enum import Enum
 
 
 class Variable(Enum):
-    # --- Механика: кинематика и динамика ---
-    DISTANCE = "distance"
-    VELOCITY = "velocity"
-    INITIAL_VELOCITY = "initial_velocity"
-    ACCELERATION = "acceleration"
-    CENTRIPETAL_ACC = "centripetal_acceleration"
-    TIME = "time"
-    TIME_DELTA = "time_delta"
-    MASS = "mass"
-    MASS_1 = "mass_1"
-    MASS_2 = "mass_2"
-    FORCE = "force"
-    FRICTION_FORCE = "friction_force"
-    GRAVITY_FORCE = "gravity_force"
-    GRAVITATIONAL_FORCE = "gravitational_force"
-    FIRST_COSMIC_VEL = "first_cosmic_velocity"
-    ELASTIC_FORCE = "elastic_force"
-    STIFFNESS = "stiffness"
-    ELONGATION = "elongation"
-    HEIGHT = "height"
-    FRICTION_COEFF = "friction_coeff"
-    LENGTH = "length"
-    RADIUS = "radius"
-    MOMENTUM = "momentum"
-    WORK = "work"
-    USEFUL_WORK = "useful_work"
-    TOTAL_WORK = "total_work"
-    POWER = "power"
-    KINETIC_ENERGY = "kinetic_energy"
-    POTENTIAL_ENERGY = "potential_energy"
-    MECHANICAL_ENERGY = "mechanical_energy"
-    TORQUE = "torque"
-    EFFICIENCY = "efficiency"
-    CARNOT_EFFICIENCY = "carnot_efficiency"
-    PERIOD = "period"
-    FREQUENCY = "frequency"
-    ANGULAR_VELOCITY = "angular_velocity"
+    # --- Кинематика и Механика ---
+    MASS = "m"
+    MASS_1 = "m1"
+    MASS_2 = "m2"
+    MASS_ROD = "m_rod"
+    VELOCITY = "v"
+    VELOCITY_0 = "v0"
+    VELOCITY_1 = "v1"
+    VELOCITY_2 = "v2"
+    VELOCITY_MAX = "v_max"
+    U_SPEED = "u_speed"
+    ACCELERATION = "a"
+    TIME = "t"
+    TIME_START = "t_start"
+    TIME_END = "t_end"
+    DISPLACEMENT = "S"
+    HEIGHT = "h"
+    RADIUS = "R_radius"
+    ANGLE = "alpha"
+    OMEGA = "omega"
+    FREQUENCY_ROT = "freq_rot"
+    PERIOD = "T_period"
 
-    # --- Гидростатика ---
-    ARCHIMEDES_FORCE = "archimedes_force"
-    HYDROSTATIC_PRESSURE = "hydrostatic_pressure"
+    # --- Динамика и Векторные силы ---
+    FORCE = "F"
+    FORCE_PULL = "F_pull"
+    FORCE_FRICTION = "F_tr"
+    NORMAL_FORCE = "N_norm"
+    TENSION = "T_tension"
+    WEIGHT = "P_weight"
+    FRICTION_COEFF = "mu"
+    SPRING_K = "k"
+    SPRING_X = "x_spring"
+    MOMENTUM = "p"
+    MOMENTUM_PHOTONS = "p_photons"
+    PRESSURE = "P_press"
+    DENSITY = "rho"
+    VOLUME = "V"
+    AREA = "S_area"
+    ARCHIMEDES_FORCE = "F_arch"
 
-    # --- Новые функциональные переменные (матанализ) ---
-    POSITION_FUNC = "position_func"          # x(t)
-    VELOCITY_FUNC = "velocity_func"          # v(t)
-    ACCELERATION_FUNC = "acceleration_func"  # a(t)
-    FORCE_FUNC = "force_func"                # F(x) или F(t)
-    CURRENT_FUNC = "current_func"            # i(t)
-    MAGNETIC_FLUX_FUNC = "flux_func"         # Phi(t)
-    COORD_START = "coord_start"              # x1
-    COORD_END = "coord_end"                  # x2
-    TIME_START = "time_start"                # t1
-    TIME_END = "time_end"                    # t2
+    # --- Энергия, Работа, Мощность ---
+    KINETIC_ENERGY = "E_k"
+    POTENTIAL_ENERGY = "E_p"
+    MECHANICAL_ENERGY = "E_mech"
+    WORK = "A"
+    POWER_MECH = "N_power"
+    EFFICIENCY = "eta"
 
-    # --- МКТ и термодинамика ---
-    PRESSURE = "pressure"
-    TEMPERATURE = "temperature"
-    TEMP_HOT = "temp_hot"
-    TEMP_COLD = "temp_cold"
-    VOLUME = "volume"
-    DENSITY = "density"
-    MOLE_AMOUNT = "mole_amount"
-    INTERNAL_ENERGY = "internal_energy"
-    HEAT = "heat"
-    HEAT_HOT = "heat_hot"
-    HEAT_COLD = "heat_cold"
-    SPECIFIC_HEAT = "specific_heat"
-    FUSION_HEAT = "fusion_heat"
-    VAPOR_HEAT = "vapor_heat"
-    CONCENTRATION = "concentration"
-    MOLECULE_KINETIC = "molecule_kinetic"
-    HUMIDITY = "humidity"
-    VAPOR_PRESSURE = "vapor_pressure"
-    SATURATED_VAPOR_PRESSURE = "saturated_vapor_pressure"
-    VAPOR_DENSITY = "vapor_density"
-    SATURATED_VAPOR_DENSITY = "saturated_vapor_density"
+    # --- Функции матанализа ---
+    X_FUNC = "x_func"
+    V_FUNC = "v_func"
+    A_FUNC = "a_func"
+    F_FUNC = "F_func"
 
-    # --- Электродинамика и цепи ---
-    CURRENT = "current"
-    SHORT_CIRCUIT_CURRENT = "short_circuit_current"
-    VOLTAGE = "voltage"
-    RESISTANCE = "resistance"
-    INTERNAL_RESISTANCE = "internal_resistance"
-    EMF = "emf"
-    CHARGE = "charge"
-    CHARGE_1 = "charge_1"
-    CHARGE_2 = "charge_2"
-    CAPACITANCE = "capacitance"
-    ELECTRIC_FIELD = "electric_field"
-    ELECTRIC_ENERGY = "electric_energy"
-    ELECTRIC_POWER = "electric_power"
-    JOULE_HEAT = "joule_heat"
-    RESISTIVITY = "resistivity"
-    WIRE_AREA = "wire_area"
+    # --- Термодинамика и МКТ ---
+    HEAT = "Q"
+    HEAT_HOT = "Q1_hot"
+    HEAT_COLD = "Q2_cold"
+    SPECIFIC_HEAT = "c"
+    TEMP = "T"
+    DELTA_TEMP = "delta_T"
+    LATENT_MELT = "lambda_melt"
+    LATENT_VAP = "L_vap"
+    MOLAR_MASS = "M_mol"
+    AMOUNT_SUBSTANCE = "nu_mol"
 
-    # --- Магнетизм и колебания ---
-    MAGNETIC_FIELD = "magnetic_field"
-    MAGNETIC_FLUX = "magnetic_flux"
-    FLUX_DELTA = "flux_delta"
-    INDUCTANCE = "inductance"
-    INDUCED_EMF = "induced_emf"
-    MAGNETIC_ENERGY = "magnetic_energy"
-    AMPERE_FORCE = "ampere_force"
-    LORENTZ_FORCE = "lorentz_force"
-    COULOMB_FORCE = "coulomb_force"
-    THOMSON_PERIOD = "thomson_period"
-    WAVE_SPEED = "wave_speed"
+    # --- Электродинамика и Магнетизм ---
+    CHARGE = "q"
+    CURRENT = "I"
+    VOLTAGE = "U"
+    RESISTANCE = "R"
+    POWER_EL = "P_el"
+    Q_JOULE = "Q_joule"
+    MAGNETIC_B = "B"
+    WIRE_LENGTH = "l"
+    MAGNETIC_FLUX = "Phi"
+    EMF_IND = "E_ind"
+    EMF_SOURCE = "E_emf"
+    CAPACITANCE = "C"
+    INDUCTANCE = "L_ind"
+    THOMSON_PERIOD = "T_thomson"
 
-    # --- Оптика ---
-    WAVELENGTH = "wavelength"
-    OBJECT_DISTANCE = "object_distance"
-    IMAGE_DISTANCE = "image_distance"
-    FOCAL_LENGTH = "focal_length"
-    OPTICAL_POWER = "optical_power"
-    MAGNIFICATION = "magnification"
-    DIFFRACTION_D = "diffraction_d"
-    DIFFRACTION_ORDER = "diffraction_order"
-    REFRACTIVE_INDEX = "refractive_index"
-    LIGHT_SPEED_MEDIUM = "light_speed_medium"
+    # --- Квантовая и Ядерная физика ---
+    FREQ_LIGHT = "nu_freq"
+    WAVELENGTH = "lambda_wave"
+    WORK_FUNCTION = "A_vyh"
+    STOPPING_VOLTAGE = "U_stop"
+    PHOTON_ENERGY = "E_ph"
+    PARTICLES_COUNT = "N_particles"
+    DECAY_CONSTANT = "lambda_decay"
+    ACTIVITY = "A_act"
 
-    # --- Квантовая и ядерная физика ---
-    WORK_FUNCTION = "work_function"
-    PHOTON_ENERGY = "photon_energy"
-    PHOTON_MOMENTUM = "photon_momentum"
-    ELECTRON_KINETIC = "electron_kinetic"
-    STOPPING_VOLTAGE = "stopping_voltage"
-    RED_LIMIT_FREQ = "red_limit_freq"
-    HALF_LIFE = "half_life"
-    INITIAL_PARTICLES = "initial_particles"
-    PARTICLE_COUNT = "particle_count"
-    ACTIVITY = "activity"
-    DECAY_CONSTANT = "decay_constant"
-    REST_ENERGY = "rest_energy"
-    MASS_DEFECT = "mass_defect"
-    ENERGY_DEFECT = "energy_defect"
-    AREA = "area"
+    # --- Константы ---
+    G_ACCEL = "g"
+    SPEED_OF_LIGHT = "c_light"
+    PLANCK = "h_planck"
+    ELEM_CHARGE = "e_charge"
+    GAS_CONSTANT = "R_gas"
+
+
+# Канонические отображаемые имена
+VARIABLE_DISPLAY_NAMES = {var: var.value for var in Variable}
+VARIABLE_DISPLAY_NAMES.update({
+    Variable.X_FUNC: "x(t)",
+    Variable.V_FUNC: "v(t)",
+    Variable.A_FUNC: "a(t)",
+    Variable.F_FUNC: "F(t)",
+})
+
+# Единицы измерения СИ для вывода ответа
+VARIABLE_UNITS = {
+    Variable.MASS: "кг",
+    Variable.MASS_1: "кг",
+    Variable.MASS_2: "кг",
+    Variable.MASS_ROD: "кг",
+    Variable.VELOCITY: "м/с",
+    Variable.VELOCITY_0: "м/с",
+    Variable.VELOCITY_1: "м/с",
+    Variable.VELOCITY_2: "м/с",
+    Variable.VELOCITY_MAX: "м/с",
+    Variable.U_SPEED: "м/с",
+    Variable.ACCELERATION: "м/с²",
+    Variable.TIME: "с",
+    Variable.TIME_START: "с",
+    Variable.TIME_END: "с",
+    Variable.DISPLACEMENT: "м",
+    Variable.HEIGHT: "м",
+    Variable.RADIUS: "м",
+    Variable.ANGLE: "°",
+    Variable.OMEGA: "рад/с",
+    Variable.FREQUENCY_ROT: "Гц",
+    Variable.PERIOD: "с",
+    Variable.FORCE: "Н",
+    Variable.FORCE_PULL: "Н",
+    Variable.FORCE_FRICTION: "Н",
+    Variable.NORMAL_FORCE: "Н",
+    Variable.TENSION: "Н",
+    Variable.WEIGHT: "Н",
+    Variable.FRICTION_COEFF: "",
+    Variable.SPRING_K: "Н/м",
+    Variable.SPRING_X: "м",
+    Variable.MOMENTUM: "кг·м/с",
+    Variable.MOMENTUM_PHOTONS: "кг·м/с",
+    Variable.PRESSURE: "Па",
+    Variable.DENSITY: "кг/м³",
+    Variable.VOLUME: "м³",
+    Variable.AREA: "м²",
+    Variable.ARCHIMEDES_FORCE: "Н",
+    Variable.KINETIC_ENERGY: "Дж",
+    Variable.POTENTIAL_ENERGY: "Дж",
+    Variable.MECHANICAL_ENERGY: "Дж",
+    Variable.WORK: "Дж",
+    Variable.POWER_MECH: "Вт",
+    Variable.EFFICIENCY: "",
+    Variable.HEAT: "Дж",
+    Variable.HEAT_HOT: "Дж",
+    Variable.HEAT_COLD: "Дж",
+    Variable.SPECIFIC_HEAT: "Дж/(кг·К)",
+    Variable.TEMP: "К",
+    Variable.DELTA_TEMP: "К",
+    Variable.LATENT_MELT: "Дж/кг",
+    Variable.LATENT_VAP: "Дж/кг",
+    Variable.MOLAR_MASS: "кг/моль",
+    Variable.AMOUNT_SUBSTANCE: "моль",
+    Variable.CHARGE: "Кл",
+    Variable.CURRENT: "А",
+    Variable.VOLTAGE: "В",
+    Variable.RESISTANCE: "Ом",
+    Variable.POWER_EL: "Вт",
+    Variable.Q_JOULE: "Дж",
+    Variable.MAGNETIC_B: "Тл",
+    Variable.WIRE_LENGTH: "м",
+    Variable.MAGNETIC_FLUX: "Вб",
+    Variable.EMF_IND: "В",
+    Variable.EMF_SOURCE: "В",
+    Variable.CAPACITANCE: "Ф",
+    Variable.INDUCTANCE: "Гн",
+    Variable.THOMSON_PERIOD: "с",
+    Variable.FREQ_LIGHT: "Гц",
+    Variable.WAVELENGTH: "м",
+    Variable.WORK_FUNCTION: "Дж",
+    Variable.STOPPING_VOLTAGE: "В",
+    Variable.PHOTON_ENERGY: "Дж",
+    Variable.PARTICLES_COUNT: "",
+    Variable.DECAY_CONSTANT: "с⁻¹",
+    Variable.ACTIVITY: "Бк",
+}
+
+# Словарь синонимов и алиасов для ввода пользователя
+STRING_TO_VARIABLE = {}
+for _v in Variable:
+    STRING_TO_VARIABLE[_v.value] = _v
+    STRING_TO_VARIABLE[_v.name] = _v
+
+STRING_TO_VARIABLE.update({
+    # Функции
+    "R_rad": Variable.RADIUS,
+    "r": Variable.RADIUS,
+    "x(t)": Variable.X_FUNC,
+    "v(t)": Variable.V_FUNC,
+    "a(t)": Variable.A_FUNC,
+    "F(t)": Variable.F_FUNC,
+    # Индексы и синонимы механики
+    "m_1": Variable.MASS_1,
+    "m_2": Variable.MASS_2,
+    "m_vapor": Variable.MASS,
+    "v_0": Variable.VELOCITY_0,
+    "v_1": Variable.VELOCITY_1,
+    "v_2": Variable.VELOCITY_2,
+    "u": Variable.U_SPEED,
+    "delta_x": Variable.SPRING_X,
+    "x": Variable.SPRING_X,
+    "F_tp": Variable.FORCE_FRICTION,
+    "F_fr": Variable.FORCE_FRICTION,
+    "N": Variable.NORMAL_FORCE,
+    "T_nit": Variable.TENSION,
+    "P": Variable.WEIGHT,
+    "p_ph": Variable.MOMENTUM_PHOTONS,
+    # Термодинамика
+    "c_heat": Variable.SPECIFIC_HEAT,
+    "L": Variable.LATENT_VAP,
+    # Электродинамика и Кванты
+    "U_volt": Variable.VOLTAGE,
+    "nu": Variable.FREQ_LIGHT,
+})

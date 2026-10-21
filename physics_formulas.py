@@ -1,1134 +1,603 @@
-# physics_formulas.py
-from math_engine import Expr
-from dataclasses import dataclass
-from typing import List, Callable, Dict, Any
 import math
-
+from dataclasses import dataclass
+from typing import Callable
 from variables import Variable
-from constants import CONSTANTS
+import math_engine
 
 
 @dataclass(frozen=True)
 class Formula:
-    id: str
-    section: str
-    requires: List[Variable]
+    name: str
     result_variable: Variable
-    calc: Callable[[Dict[Variable, float]], float]
+    requires: tuple[Variable, ...]
+    calc: Callable[[dict], float | str]
     pretty: str
-
-    def __getitem__(self, item):
-        return getattr(self, item)
+    is_bridge: bool = False
 
 
-FORMULAS_LIST = [
-    # =========================================================
-    # 1. КИНЕМАТИКА
-    # =========================================================
+def _deg_sin(deg: float) -> float:
+    return math.sin(math.radians(deg))
+
+
+def _deg_cos(deg: float) -> float:
+    return math.cos(math.radians(deg))
+
+
+def _safe_div(a: float, b: float) -> float:
+    if abs(b) == 0.0:
+        raise ZeroDivisionError("Деление на 0")
+    return a / b
+
+
+def _safe_sqrt(x: float) -> float:
+    if x < 0:
+        raise ValueError("math domain error: корень из отрицательного числа")
+    return math.sqrt(x)
+
+
+FORMULAS_LIST: list[Formula] = [
+    # =========================================================================
+    # 1. МАТАНАЛИЗ И АНАЛИТИЧЕСКИЕ ФУНКЦИИ (Задание №2 и интегралы)
+    # =========================================================================
     Formula(
-        id="S = v * t", section="mechanics",
-        requires=[Variable.VELOCITY, Variable.TIME],
-        result_variable=Variable.DISTANCE,
-        calc=lambda env: env[Variable.VELOCITY] * env[Variable.TIME],
-        pretty="S = v·t"
+        name="Производная координаты x'(t)",
+        result_variable=Variable.V_FUNC,
+        requires=(Variable.X_FUNC,),
+        calc=lambda d: math_engine.symbolic_derivative_str(d[Variable.X_FUNC], "t"),
+        pretty="v(t) = x'(t)",
     ),
     Formula(
-        id="S = v * t (найти v)", section="mechanics",
-        requires=[Variable.DISTANCE, Variable.TIME],
+        name="Производная скорости v'(t)",
+        result_variable=Variable.A_FUNC,
+        requires=(Variable.V_FUNC,),
+        calc=lambda d: math_engine.symbolic_derivative_str(d[Variable.V_FUNC], "t"),
+        pretty="a(t) = v'(t)",
+    ),
+    Formula(
+        name="Зависимость силы от времени F(t) = m·a(t)",
+        result_variable=Variable.F_FUNC,
+        requires=(Variable.MASS, Variable.A_FUNC),
+        calc=lambda d: math_engine.scale_function_str(d[Variable.A_FUNC], d[Variable.MASS], "t"),
+        pretty="F(t) = m·a(t)",
+    ),
+    Formula(
+        name="Значение скорости v(t) в момент t",
         result_variable=Variable.VELOCITY,
-        calc=lambda env: env[Variable.DISTANCE] / env[Variable.TIME],
-        pretty="v = S / t"
+        requires=(Variable.V_FUNC, Variable.TIME),
+        calc=lambda d: math_engine.eval_ast(d[Variable.V_FUNC], {"t": d[Variable.TIME]}),
+        pretty="v = v(t)",
     ),
     Formula(
-        id="S = v * t (найти t)", section="mechanics",
-        requires=[Variable.DISTANCE, Variable.VELOCITY],
-        result_variable=Variable.TIME,
-        calc=lambda env: env[Variable.DISTANCE] / env[Variable.VELOCITY],
-        pretty="t = S / v"
-    ),
-    Formula(
-        id="S = v0*t + (a*t^2)/2", section="mechanics",
-        requires=[Variable.INITIAL_VELOCITY, Variable.ACCELERATION, Variable.TIME],
-        result_variable=Variable.DISTANCE,
-        calc=lambda env: env[Variable.INITIAL_VELOCITY] * env[Variable.TIME] + (env[Variable.ACCELERATION] * (env[Variable.TIME] ** 2)) / 2,
-        pretty="S = v₀·t + (a·t²) / 2"
-    ),
-    Formula(
-        id="S = v0*t + (a*t^2)/2 (найти v0)", section="mechanics",
-        requires=[Variable.DISTANCE, Variable.ACCELERATION, Variable.TIME],
-        result_variable=Variable.INITIAL_VELOCITY,
-        calc=lambda env: (env[Variable.DISTANCE] - (env[Variable.ACCELERATION] * (env[Variable.TIME] ** 2)) / 2) / env[Variable.TIME],
-        pretty="v₀ = (S − a·t²/2) / t"
-    ),
-    Formula(
-        id="S = v0*t + (a*t^2)/2 (найти a)", section="mechanics",
-        requires=[Variable.DISTANCE, Variable.INITIAL_VELOCITY, Variable.TIME],
+        name="Значение ускорения a(t) в момент t",
         result_variable=Variable.ACCELERATION,
-        calc=lambda env: 2 * (env[Variable.DISTANCE] - env[Variable.INITIAL_VELOCITY] * env[Variable.TIME]) / (env[Variable.TIME] ** 2),
-        pretty="a = 2(S − v₀·t) / t²"
+        requires=(Variable.A_FUNC, Variable.TIME),
+        calc=lambda d: math_engine.eval_ast(d[Variable.A_FUNC], {"t": d[Variable.TIME]}),
+        pretty="a = a(t)",
     ),
     Formula(
-        id="v = v0 + a * t", section="mechanics",
-        requires=[Variable.INITIAL_VELOCITY, Variable.ACCELERATION, Variable.TIME],
+        name="Интеграл ускорения v = ∫a(t)dt",
         result_variable=Variable.VELOCITY,
-        calc=lambda env: env[Variable.INITIAL_VELOCITY] + env[Variable.ACCELERATION] * env[Variable.TIME],
-        pretty="v = v₀ + a·t"
+        requires=(Variable.A_FUNC, Variable.TIME_START, Variable.TIME_END),
+        calc=lambda d: math_engine.definite_integral(
+            d[Variable.A_FUNC], d[Variable.TIME_START], d[Variable.TIME_END]
+        ),
+        pretty="v = ∫a(t)dt",
     ),
     Formula(
-        id="v = v0 + a * t (найти v0)", section="mechanics",
-        requires=[Variable.VELOCITY, Variable.ACCELERATION, Variable.TIME],
-        result_variable=Variable.INITIAL_VELOCITY,
-        calc=lambda env: env[Variable.VELOCITY] - env[Variable.ACCELERATION] * env[Variable.TIME],
-        pretty="v₀ = v − a·t"
-    ),
-    Formula(
-        id="v = v0 + a * t (найти a)", section="mechanics",
-        requires=[Variable.VELOCITY, Variable.INITIAL_VELOCITY, Variable.TIME],
-        result_variable=Variable.ACCELERATION,
-        calc=lambda env: (env[Variable.VELOCITY] - env[Variable.INITIAL_VELOCITY]) / env[Variable.TIME],
-        pretty="a = (v − v₀) / t"
-    ),
-    Formula(
-        id="v = v0 + a * t (найти t)", section="mechanics",
-        requires=[Variable.VELOCITY, Variable.INITIAL_VELOCITY, Variable.ACCELERATION],
-        result_variable=Variable.TIME,
-        calc=lambda env: (env[Variable.VELOCITY] - env[Variable.INITIAL_VELOCITY]) / env[Variable.ACCELERATION],
-        pretty="t = (v − v₀) / a"
-    ),
-    Formula(
-        id="a = v^2 / R", section="mechanics",
-        requires=[Variable.VELOCITY, Variable.RADIUS],
-        result_variable=Variable.CENTRIPETAL_ACC,
-        calc=lambda env: (env[Variable.VELOCITY] ** 2) / env[Variable.RADIUS],
-        pretty="aц = v² / R"
-    ),
-    Formula(
-        id="a = v^2 / R (найти v)", section="mechanics",
-        requires=[Variable.CENTRIPETAL_ACC, Variable.RADIUS],
-        result_variable=Variable.VELOCITY,
-        calc=lambda env: math.sqrt(env[Variable.CENTRIPETAL_ACC] * env[Variable.RADIUS]),
-        pretty="v = √(aц·R)"
-    ),
-    Formula(
-        id="a = v^2 / R (найти R)", section="mechanics",
-        requires=[Variable.VELOCITY, Variable.CENTRIPETAL_ACC],
-        result_variable=Variable.RADIUS,
-        calc=lambda env: (env[Variable.VELOCITY] ** 2) / env[Variable.CENTRIPETAL_ACC],
-        pretty="R = v² / aц"
-    ),
-    Formula(
-        id="v = omega * R", section="mechanics",
-        requires=[Variable.ANGULAR_VELOCITY, Variable.RADIUS],
-        result_variable=Variable.VELOCITY,
-        calc=lambda env: env[Variable.ANGULAR_VELOCITY] * env[Variable.RADIUS],
-        pretty="v = ω·R"
-    ),
-    Formula(
-        id="omega = 2 * pi * nu_freq", section="mechanics",
-        requires=[Variable.FREQUENCY],
-        result_variable=Variable.ANGULAR_VELOCITY,
-        calc=lambda env: 2 * math.pi * env[Variable.FREQUENCY],
-        pretty="ω = 2π·ν"
-    ),
-    Formula(
-        id="nu_freq = 1 / T_period", section="mechanics",
-        requires=[Variable.PERIOD],
-        result_variable=Variable.FREQUENCY,
-        calc=lambda env: 1.0 / env[Variable.PERIOD],
-        pretty="ν = 1 / T"
+        name="Интеграл скорости S = ∫v(t)dt",
+        result_variable=Variable.DISPLACEMENT,
+        requires=(Variable.V_FUNC, Variable.TIME_START, Variable.TIME_END),
+        calc=lambda d: math_engine.definite_integral(
+            d[Variable.V_FUNC], d[Variable.TIME_START], d[Variable.TIME_END]
+        ),
+        pretty="S = ∫v(t)dt",
     ),
 
-    # =========================================================
-    # 2. ДИНАМИКА, ТЯГОТЕНИЕ, СТАТИКА
-    # =========================================================
+    # =========================================================================
+    # 2. КИНЕМАТИКА
+    # =========================================================================
     Formula(
-        id="a = (F - mu*m*g) / m", section="mechanics",
-        requires=[Variable.FORCE, Variable.MASS, Variable.FRICTION_COEFF],
-        result_variable=Variable.ACCELERATION,
-        calc=lambda env: (env[Variable.FORCE] - env[Variable.FRICTION_COEFF] * env[Variable.MASS] * CONSTANTS["g"]) / env[Variable.MASS],
-        pretty="a = (F − μ·m·g) / m"
+        name="Скорость при равноускоренном движении",
+        result_variable=Variable.VELOCITY,
+        requires=(Variable.VELOCITY_0, Variable.ACCELERATION, Variable.TIME),
+        calc=lambda d: d[Variable.VELOCITY_0] + d[Variable.ACCELERATION] * d[Variable.TIME],
+        pretty="v = v0 + a·t",
     ),
     Formula(
-        id="F = a*m + mu*m*g", section="mechanics",
-        requires=[Variable.ACCELERATION, Variable.MASS, Variable.FRICTION_COEFF],
+        name="Ускорение через изменение скорости",
+        result_variable=Variable.ACCELERATION,
+        requires=(Variable.VELOCITY, Variable.VELOCITY_0, Variable.TIME),
+        calc=lambda d: _safe_div(d[Variable.VELOCITY] - d[Variable.VELOCITY_0], d[Variable.TIME]),
+        pretty="a = (v - v0) / t",
+    ),
+    Formula(
+        name="Перемещение при равноускоренном движении",
+        result_variable=Variable.DISPLACEMENT,
+        requires=(Variable.VELOCITY_0, Variable.TIME, Variable.ACCELERATION),
+        calc=lambda d: d[Variable.VELOCITY_0] * d[Variable.TIME]
+        + 0.5 * d[Variable.ACCELERATION] * (d[Variable.TIME] ** 2),
+        pretty="S = v0·t + a·t²/2",
+    ),
+    Formula(
+        name="Ускорение через путь и время (без начальной скорости)",
+        result_variable=Variable.ACCELERATION,
+        requires=(Variable.DISPLACEMENT, Variable.TIME),
+        calc=lambda d: _safe_div(2.0 * d[Variable.DISPLACEMENT], d[Variable.TIME] ** 2),
+        pretty="a = 2·S / t²",
+    ),
+    Formula(
+        name="Перемещение через среднюю скорость",
+        result_variable=Variable.DISPLACEMENT,
+        requires=(Variable.VELOCITY_0, Variable.VELOCITY, Variable.TIME),
+        calc=lambda d: 0.5 * (d[Variable.VELOCITY_0] + d[Variable.VELOCITY]) * d[Variable.TIME],
+        pretty="S = (v0 + v)·t / 2",
+    ),
+    Formula(
+        name="Угловая скорость через частоту",
+        result_variable=Variable.OMEGA,
+        requires=(Variable.FREQUENCY_ROT,),
+        calc=lambda d: 2.0 * math.pi * d[Variable.FREQUENCY_ROT],
+        pretty="ω = 2π·ν",
+    ),
+    Formula(
+        name="Максимальная скорость в повороте по трению (Задание №7)",
+        result_variable=Variable.VELOCITY_MAX,
+        requires=(Variable.FRICTION_COEFF, Variable.G_ACCEL, Variable.RADIUS),
+        calc=lambda d: _safe_sqrt(
+            d[Variable.FRICTION_COEFF] * d[Variable.G_ACCEL] * d[Variable.RADIUS]
+        ),
+        pretty="v_max = √(μ·g·R)",
+    ),
+    Formula(
+        name="Скорость в повороте по трению (алиас v)",
+        result_variable=Variable.VELOCITY,
+        requires=(Variable.FRICTION_COEFF, Variable.G_ACCEL, Variable.RADIUS),
+        calc=lambda d: _safe_sqrt(
+            d[Variable.FRICTION_COEFF] * d[Variable.G_ACCEL] * d[Variable.RADIUS]
+        ),
+        pretty="v = √(μ·g·R)",
+    ),
+    Formula(
+        name="Угол наклона мотоциклиста в повороте (Задание №7)",
+        result_variable=Variable.ANGLE,
+        requires=(Variable.FRICTION_COEFF,),
+        calc=lambda d: math.degrees(math.atan(d[Variable.FRICTION_COEFF])),
+        pretty="α = arctg(μ)",
+    ),
+
+    # =========================================================================
+    # 3. ДИНАМИКА, ВЕКТОРНЫЕ ПРОЕКЦИИ, НАКЛОННАЯ ПЛОСКОСТЬ (Задания №1,3,4,5,6,8,9)
+    # =========================================================================
+    Formula(
+        name="Второй закон Ньютона (ускорение)",
+        result_variable=Variable.ACCELERATION,
+        requires=(Variable.FORCE, Variable.MASS),
+        calc=lambda d: _safe_div(d[Variable.FORCE], d[Variable.MASS]),
+        pretty="a = F / m",
+    ),
+    Formula(
+        name="Второй закон Ньютона (сила)",
         result_variable=Variable.FORCE,
-        calc=lambda env: env[Variable.ACCELERATION] * env[Variable.MASS] + env[Variable.FRICTION_COEFF] * env[Variable.MASS] * CONSTANTS["g"],
-        pretty="F = m·(a + μ·g)"
+        requires=(Variable.MASS, Variable.ACCELERATION),
+        calc=lambda d: d[Variable.MASS] * d[Variable.ACCELERATION],
+        pretty="F = m·a",
     ),
     Formula(
-        id="a = F / m", section="mechanics",
-        requires=[Variable.FORCE, Variable.MASS],
-        result_variable=Variable.ACCELERATION,
-        calc=lambda env: env[Variable.FORCE] / env[Variable.MASS],
-        pretty="a = F / m"
-    ),
-    Formula(
-        id="F = m * a", section="mechanics",
-        requires=[Variable.MASS, Variable.ACCELERATION],
-        result_variable=Variable.FORCE,
-        calc=lambda env: env[Variable.MASS] * env[Variable.ACCELERATION],
-        pretty="F = m·a"
-    ),
-    Formula(
-        id="Fтр = mu * m * g", section="mechanics",
-        requires=[Variable.FRICTION_COEFF, Variable.MASS],
-        result_variable=Variable.FRICTION_FORCE,
-        calc=lambda env: env[Variable.FRICTION_COEFF] * env[Variable.MASS] * CONSTANTS["g"],
-        pretty="Fтр = μ·m·g"
-    ),
-    Formula(
-        id="Fупр = k * x", section="mechanics",
-        requires=[Variable.STIFFNESS, Variable.ELONGATION],
-        result_variable=Variable.ELASTIC_FORCE,
-        calc=lambda env: env[Variable.STIFFNESS] * env[Variable.ELONGATION],
-        pretty="Fупр = k·x"
-    ),
-    Formula(
-        id="Fупр = k * x (найти k)", section="mechanics",
-        requires=[Variable.ELASTIC_FORCE, Variable.ELONGATION],
-        result_variable=Variable.STIFFNESS,
-        calc=lambda env: env[Variable.ELASTIC_FORCE] / env[Variable.ELONGATION],
-        pretty="k = Fупр / x"
-    ),
-    Formula(
-        id="Fупр = k * x (найти x)", section="mechanics",
-        requires=[Variable.ELASTIC_FORCE, Variable.STIFFNESS],
-        result_variable=Variable.ELONGATION,
-        calc=lambda env: env[Variable.ELASTIC_FORCE] / env[Variable.STIFFNESS],
-        pretty="x = Fупр / k"
-    ),
-    Formula(
-        id="Fтяж = m * g", section="mechanics",
-        requires=[Variable.MASS],
-        result_variable=Variable.GRAVITY_FORCE,
-        calc=lambda env: env[Variable.MASS] * CONSTANTS["g"],
-        pretty="Fтяж = m·g"
-    ),
-    Formula(
-        id="F_grav = G_grav * m1 * m2 / R^2", section="mechanics",
-        requires=[Variable.MASS_1, Variable.MASS_2, Variable.RADIUS],
-        result_variable=Variable.GRAVITATIONAL_FORCE,
-        calc=lambda env: CONSTANTS["G_grav"] * env[Variable.MASS_1] * env[Variable.MASS_2] / (env[Variable.RADIUS] ** 2),
-        pretty="F = G·(m₁·m₂) / R²"
-    ),
-    Formula(
-        id="v_cosmic_1 = sqrt(G_grav * M_earth / R_earth)", section="mechanics",
-        requires=[],
-        result_variable=Variable.FIRST_COSMIC_VEL,
-        calc=lambda env: math.sqrt(CONSTANTS["G_grav"] * CONSTANTS["M_earth"] / CONSTANTS["R_earth"]),
-        pretty="v₁ = √(G·M / R)"
-    ),
-    Formula(
-        id="P = Fтяж / S", section="mechanics",
-        requires=[Variable.GRAVITY_FORCE, Variable.AREA],
-        result_variable=Variable.PRESSURE,
-        calc=lambda env: env[Variable.GRAVITY_FORCE] / env[Variable.AREA],
-        pretty="P = Fтяж / S"
-    ),
-    Formula(
-        id="P = F / S", section="mechanics",
-        requires=[Variable.FORCE, Variable.AREA],
-        result_variable=Variable.PRESSURE,
-        calc=lambda env: env[Variable.FORCE] / env[Variable.AREA],
-        pretty="P = F / S"
-    ),
-    Formula(
-        id="M_moment = F * l", section="mechanics",
-        requires=[Variable.FORCE, Variable.LENGTH],
-        result_variable=Variable.TORQUE,
-        calc=lambda env: env[Variable.FORCE] * env[Variable.LENGTH],
-        pretty="M = F·l"
-    ),
-
-    # Связка видов работы (полезная работа -> общая работа механизма)
-    Formula(
-        id="A = A_polez", section="mechanics",
-        requires=[Variable.USEFUL_WORK],
-        result_variable=Variable.WORK,
-        calc=lambda env: env[Variable.USEFUL_WORK],
-        pretty="A = Aпол"
-    ),
-    # Выражение потенциальной энергии через работу
-    Formula(
-        id="E_p = A", section="mechanics",
-        requires=[Variable.WORK],
-        result_variable=Variable.POTENTIAL_ENERGY,
-        calc=lambda env: env[Variable.WORK],
-        pretty="Eп = A"
-    ),
-    # Выражение высоты подъема h = Eп / (m·g)
-    Formula(
-        id="h = E_p / (m * g)", section="mechanics",
-        requires=[Variable.POTENTIAL_ENERGY, Variable.MASS],
-        result_variable=Variable.HEIGHT,
-        calc=lambda env: env[Variable.POTENTIAL_ENERGY] / (env[Variable.MASS] * CONSTANTS["g"]),
-        pretty="h = Eп / (m·g)"
-    ),
-
-    # =========================================================
-    # 3. ЗАКОНЫ СОХРАНЕНИЯ, РАБОТА, МОЩНОСТЬ
-    # =========================================================
-    Formula(
-        id="p = m * v", section="mechanics",
-        requires=[Variable.MASS, Variable.VELOCITY],
-        result_variable=Variable.MOMENTUM,
-        calc=lambda env: env[Variable.MASS] * env[Variable.VELOCITY],
-        pretty="p = m·v"
-    ),
-    Formula(
-        id="E_k = m * v^2 / 2", section="mechanics",
-        requires=[Variable.MASS, Variable.VELOCITY],
-        result_variable=Variable.KINETIC_ENERGY,
-        calc=lambda env: (env[Variable.MASS] * (env[Variable.VELOCITY] ** 2)) / 2,
-        pretty="Eк = (m·v²) / 2"
-    ),
-    Formula(
-        id="E_p = m * g * h_height", section="mechanics",
-        requires=[Variable.MASS, Variable.HEIGHT],
-        result_variable=Variable.POTENTIAL_ENERGY,
-        calc=lambda env: env[Variable.MASS] * CONSTANTS["g"] * env[Variable.HEIGHT],
-        pretty="Eп = m·g·h"
-    ),
-    Formula(
-        id="E_p_spring = k * x^2 / 2", section="mechanics",
-        requires=[Variable.STIFFNESS, Variable.ELONGATION],
-        result_variable=Variable.POTENTIAL_ENERGY,
-        calc=lambda env: (env[Variable.STIFFNESS] * (env[Variable.ELONGATION] ** 2)) / 2,
-        pretty="Eп = (k·x²) / 2"
-    ),
-    Formula(
-        id="E_mech = E_k_mech + E_p", section="mechanics",
-        requires=[Variable.KINETIC_ENERGY, Variable.POTENTIAL_ENERGY],
-        result_variable=Variable.MECHANICAL_ENERGY,
-        calc=lambda env: env[Variable.KINETIC_ENERGY] + env[Variable.POTENTIAL_ENERGY],
-        pretty="E = Eк + Eп"
-    ),
-    Formula(
-        id="A = F * S", section="mechanics",
-        requires=[Variable.FORCE, Variable.DISTANCE],
-        result_variable=Variable.WORK,
-        calc=lambda env: env[Variable.FORCE] * env[Variable.DISTANCE],
-        pretty="A = F·S"
-    ),
-    Formula(
-        id="A = E_p", section="mechanics",
-        requires=[Variable.POTENTIAL_ENERGY],
-        result_variable=Variable.WORK,
-        calc=lambda env: env[Variable.POTENTIAL_ENERGY],
-        pretty="A = Eп"
-    ),
-    Formula(
-        id="N_power = A / t", section="mechanics",
-        requires=[Variable.WORK, Variable.TIME],
-        result_variable=Variable.POWER,
-        calc=lambda env: env[Variable.WORK] / env[Variable.TIME],
-        pretty="N = A / t"
-    ),
-    Formula(
-        id="N_power = F * v", section="mechanics",
-        requires=[Variable.FORCE, Variable.VELOCITY],
-        result_variable=Variable.POWER,
-        calc=lambda env: env[Variable.FORCE] * env[Variable.VELOCITY],
-        pretty="N = F·v"
-    ),
-
-    # =========================================================
-    # 4. ГИДРОСТАТИКА И КПД
-    # =========================================================
-    Formula(
-        id="m = rho_liquid * V", section="hydrostatics",
-        requires=[Variable.DENSITY, Variable.VOLUME],
+        name="Масса через силу и ускорение",
         result_variable=Variable.MASS,
-        calc=lambda env: env[Variable.DENSITY] * env[Variable.VOLUME],
-        pretty="m = ρ·V"
+        requires=(Variable.FORCE, Variable.ACCELERATION),
+        calc=lambda d: _safe_div(d[Variable.FORCE], d[Variable.ACCELERATION]),
+        pretty="m = F / a",
     ),
     Formula(
-        id="V = m / rho_liquid", section="hydrostatics",
-        requires=[Variable.MASS, Variable.DENSITY],
-        result_variable=Variable.VOLUME,
-        calc=lambda env: env[Variable.MASS] / env[Variable.DENSITY],
-        pretty="V = m / ρ"
+        name="Нормальная реакция с силой под углом (Задание №1)",
+        result_variable=Variable.NORMAL_FORCE,
+        requires=(Variable.MASS, Variable.G_ACCEL, Variable.FORCE, Variable.ANGLE),
+        calc=lambda d: d[Variable.MASS] * d[Variable.G_ACCEL]
+        - d[Variable.FORCE] * _deg_sin(d[Variable.ANGLE]),
+        pretty="N = m·g - F·sin(α)",
     ),
     Formula(
-        id="P_hydro = rho_liquid * g * h_height", section="hydrostatics",
-        requires=[Variable.DENSITY, Variable.HEIGHT],
-        result_variable=Variable.HYDROSTATIC_PRESSURE,
-        calc=lambda env: env[Variable.DENSITY] * CONSTANTS["g"] * env[Variable.HEIGHT],
-        pretty="P = ρ·g·h"
+        name="Сила трения скольжения F_тр = μ·N (Задание №1)",
+        result_variable=Variable.FORCE_FRICTION,
+        requires=(Variable.FRICTION_COEFF, Variable.NORMAL_FORCE),
+        calc=lambda d: d[Variable.FRICTION_COEFF] * d[Variable.NORMAL_FORCE],
+        pretty="F_тр = μ·N",
     ),
     Formula(
-        id="h_height = P_hydro / (rho_liquid * g)", section="hydrostatics",
-        requires=[Variable.HYDROSTATIC_PRESSURE, Variable.DENSITY],
-        result_variable=Variable.HEIGHT,
-        calc=lambda env: env[Variable.HYDROSTATIC_PRESSURE] / (env[Variable.DENSITY] * CONSTANTS["g"]),
-        pretty="h = P / (ρ·g)"
+        name="Сила тяги вверх по наклонной плоскости с ускорением (Задания №3, №9)",
+        result_variable=Variable.FORCE_PULL,
+        requires=(
+            Variable.MASS,
+            Variable.ACCELERATION,
+            Variable.G_ACCEL,
+            Variable.ANGLE,
+            Variable.FRICTION_COEFF,
+        ),
+        calc=lambda d: d[Variable.MASS]
+        * (
+            d[Variable.ACCELERATION]
+            + d[Variable.G_ACCEL] * _deg_sin(d[Variable.ANGLE])
+            + d[Variable.FRICTION_COEFF] * d[Variable.G_ACCEL] * _deg_cos(d[Variable.ANGLE])
+        ),
+        pretty="F_тяги = m·(a + g·sin(α) + μ·g·cos(α))",
     ),
     Formula(
-        id="F_archimedes = rho_liquid * g * V", section="hydrostatics",
-        requires=[Variable.DENSITY, Variable.VOLUME],
-        result_variable=Variable.ARCHIMEDES_FORCE,
-        calc=lambda env: env[Variable.DENSITY] * CONSTANTS["g"] * env[Variable.VOLUME],
-        pretty="Fа = ρ·g·V"
-    ),
-    Formula(
-        id="V = F_archimedes / (rho_liquid * g)", section="hydrostatics",
-        requires=[Variable.ARCHIMEDES_FORCE, Variable.DENSITY],
-        result_variable=Variable.VOLUME,
-        calc=lambda env: env[Variable.ARCHIMEDES_FORCE] / (env[Variable.DENSITY] * CONSTANTS["g"]),
-        pretty="V = Fа / (ρ·g)"
-    ),
-    Formula(
-        id="eta = A_polez / A_poln", section="efficiency",
-        requires=[Variable.USEFUL_WORK, Variable.TOTAL_WORK],
-        result_variable=Variable.EFFICIENCY,
-        calc=lambda env: env[Variable.USEFUL_WORK] / env[Variable.TOTAL_WORK],
-        pretty="η = Aпол / Aполн"
-    ),
-    Formula(
-        id="A_polez = eta * A_poln", section="efficiency",
-        requires=[Variable.EFFICIENCY, Variable.TOTAL_WORK],
-        result_variable=Variable.USEFUL_WORK,
-        calc=lambda env: env[Variable.EFFICIENCY] * env[Variable.TOTAL_WORK],
-        pretty="Aпол = η·Aполн"
-    ),
-    Formula(
-        id="A_poln = A_polez / eta", section="efficiency",
-        requires=[Variable.USEFUL_WORK, Variable.EFFICIENCY],
-        result_variable=Variable.TOTAL_WORK,
-        calc=lambda env: env[Variable.USEFUL_WORK] / env[Variable.EFFICIENCY],
-        pretty="Aполн = Aпол / η"
-    ),
-    Formula(
-        id="eta = (Q1_hot - Q2_cold) / Q1_hot", section="efficiency",
-        requires=[Variable.HEAT_HOT, Variable.HEAT_COLD],
-        result_variable=Variable.EFFICIENCY,
-        calc=lambda env: (env[Variable.HEAT_HOT] - env[Variable.HEAT_COLD]) / env[Variable.HEAT_HOT],
-        pretty="η = (Q₁ − Q₂) / Q₁"
-    ),
-    Formula(
-        id="eta_carnot = (T1_hot - T2_cold) / T1_hot", section="efficiency",
-        requires=[Variable.TEMP_HOT, Variable.TEMP_COLD],
-        result_variable=Variable.CARNOT_EFFICIENCY,
-        calc=lambda env: (env[Variable.TEMP_HOT] - env[Variable.TEMP_COLD]) / env[Variable.TEMP_HOT],
-        pretty="η = (T₁ − T₂) / T₁"
-    ),
-    Formula(
-        id="A_polez = Q1_hot - Q2_cold", section="efficiency",
-        requires=[Variable.HEAT_HOT, Variable.HEAT_COLD],
-        result_variable=Variable.USEFUL_WORK,
-        calc=lambda env: env[Variable.HEAT_HOT] - env[Variable.HEAT_COLD],
-        pretty="A = Q₁ − Q₂"
-    ),
-    Formula(
-        id="Q2_cold = Q1_hot * (1 - eta)", section="efficiency",
-        requires=[Variable.HEAT_HOT, Variable.EFFICIENCY],
-        result_variable=Variable.HEAT_COLD,
-        calc=lambda env: env[Variable.HEAT_HOT] * (1.0 - env[Variable.EFFICIENCY]),
-        pretty="Q₂ = Q₁·(1 − η)"
-    ),
-
-    # =========================================================
-    # 5. МКТ И ТЕРМОДИНАМИКА
-    # =========================================================
-    Formula(
-        id="PV = νRT (найти P)", section="mkt_thermo",
-        requires=[Variable.MOLE_AMOUNT, Variable.VOLUME, Variable.TEMPERATURE],
-        result_variable=Variable.PRESSURE,
-        calc=lambda env: (env[Variable.MOLE_AMOUNT] * CONSTANTS["R_univ"] * env[Variable.TEMPERATURE]) / env[Variable.VOLUME],
-        pretty="P = (ν·R·T) / V"
-    ),
-    Formula(
-        id="A_polez = eta * Q1_hot", section="efficiency",
-        requires=[Variable.EFFICIENCY, Variable.HEAT_HOT],
-        result_variable=Variable.USEFUL_WORK,
-        calc=lambda env: env[Variable.EFFICIENCY] * env[Variable.HEAT_HOT],
-        pretty="Aпол = η·Q₁"
-    ),
-    Formula(
-        id="PV = νRT (найти V)", section="mkt_thermo",
-        requires=[Variable.PRESSURE, Variable.MOLE_AMOUNT, Variable.TEMPERATURE],
-        result_variable=Variable.VOLUME,
-        calc=lambda env: (env[Variable.MOLE_AMOUNT] * CONSTANTS["R_univ"] * env[Variable.TEMPERATURE]) / env[Variable.PRESSURE],
-        pretty="V = (ν·R·T) / P"
-    ),
-    Formula(
-        id="rho_liquid = m / V", section="hydrostatics",
-        requires=[Variable.MASS, Variable.VOLUME],
-        result_variable=Variable.DENSITY,
-        calc=lambda env: env[Variable.MASS] / env[Variable.VOLUME],
-        pretty="ρ = m / V"
-    ),
-    Formula(
-        id="PV = νRT (найти T_temp)", section="mkt_thermo",
-        requires=[Variable.PRESSURE, Variable.VOLUME, Variable.MOLE_AMOUNT],
-        result_variable=Variable.TEMPERATURE,
-        calc=lambda env: (env[Variable.PRESSURE] * env[Variable.VOLUME]) / (env[Variable.MOLE_AMOUNT] * CONSTANTS["R_univ"]),
-        pretty="T = (P·V) / (ν·R)"
-    ),
-    Formula(
-        id="PV = νRT (найти nu)", section="mkt_thermo",
-        requires=[Variable.PRESSURE, Variable.VOLUME, Variable.TEMPERATURE],
-        result_variable=Variable.MOLE_AMOUNT,
-        calc=lambda env: (env[Variable.PRESSURE] * env[Variable.VOLUME]) / (CONSTANTS["R_univ"] * env[Variable.TEMPERATURE]),
-        pretty="ν = (P·V) / (R·T)"
-    ),
-    Formula(
-        id="P = n_conc * k_boltzmann * T_temp", section="mkt_thermo",
-        requires=[Variable.CONCENTRATION, Variable.TEMPERATURE],
-        result_variable=Variable.PRESSURE,
-        calc=lambda env: env[Variable.CONCENTRATION] * CONSTANTS["k_boltzmann"] * env[Variable.TEMPERATURE],
-        pretty="P = n·k·T"
-    ),
-    Formula(
-        id="E_k_molecule = 3/2 * k_boltzmann * T_temp", section="mkt_thermo",
-        requires=[Variable.TEMPERATURE],
-        result_variable=Variable.MOLECULE_KINETIC,
-        calc=lambda env: 1.5 * CONSTANTS["k_boltzmann"] * env[Variable.TEMPERATURE],
-        pretty="Eк = 1.5·k·T"
-    ),
-    Formula(
-        id="P = 2/3 * n_conc * E_k_molecule", section="mkt_thermo",
-        requires=[Variable.CONCENTRATION, Variable.MOLECULE_KINETIC],
-        result_variable=Variable.PRESSURE,
-        calc=lambda env: (2.0 / 3.0) * env[Variable.CONCENTRATION] * env[Variable.MOLECULE_KINETIC],
-        pretty="P = ⅔·n·Eк"
-    ),
-    Formula(
-        id="Q = cmΔT", section="mkt_thermo",
-        requires=[Variable.SPECIFIC_HEAT, Variable.MASS, Variable.TEMPERATURE],
-        result_variable=Variable.HEAT,
-        calc=lambda env: env[Variable.SPECIFIC_HEAT] * env[Variable.MASS] * env[Variable.TEMPERATURE],
-        pretty="Q = c·m·ΔT"
-    ),
-    Formula(
-        id="Q = λm", section="mkt_thermo",
-        requires=[Variable.FUSION_HEAT, Variable.MASS],
-        result_variable=Variable.HEAT,
-        calc=lambda env: env[Variable.FUSION_HEAT] * env[Variable.MASS],
-        pretty="Q = λ·m"
-    ),
-    Formula(
-        id="Q = Lm", section="mkt_thermo",
-        requires=[Variable.VAPOR_HEAT, Variable.MASS],
-        result_variable=Variable.HEAT,
-        calc=lambda env: env[Variable.VAPOR_HEAT] * env[Variable.MASS],
-        pretty="Q = L·m"
-    ),
-    Formula(
-        id="A = P * V", section="mkt_thermo",
-        requires=[Variable.PRESSURE, Variable.VOLUME],
-        result_variable=Variable.WORK,
-        calc=lambda env: env[Variable.PRESSURE] * env[Variable.VOLUME],
-        pretty="A = P·ΔV"
-    ),
-    Formula(
-        id="U_thermo = 3/2 * nu * R_univ * T_temp", section="mkt_thermo",
-        requires=[Variable.MOLE_AMOUNT, Variable.TEMPERATURE],
-        result_variable=Variable.INTERNAL_ENERGY,
-        calc=lambda env: 1.5 * env[Variable.MOLE_AMOUNT] * CONSTANTS["R_univ"] * env[Variable.TEMPERATURE],
-        pretty="ΔU = 1.5·ν·R·T"
-    ),
-    Formula(
-        id="Q = U_thermo + A", section="mkt_thermo",
-        requires=[Variable.INTERNAL_ENERGY, Variable.WORK],
-        result_variable=Variable.HEAT,
-        calc=lambda env: env[Variable.INTERNAL_ENERGY] + env[Variable.WORK],
-        pretty="Q = ΔU + A"
-    ),
-    Formula(
-        id="U_thermo = Q - A", section="mkt_thermo",
-        requires=[Variable.HEAT, Variable.WORK],
-        result_variable=Variable.INTERNAL_ENERGY,
-        calc=lambda env: env[Variable.HEAT] - env[Variable.WORK],
-        pretty="ΔU = Q − A"
-    ),
-    Formula(
-        id="Q = 2.5 * P * V", section="mkt_thermo",
-        requires=[Variable.PRESSURE, Variable.VOLUME],
-        result_variable=Variable.HEAT,
-        calc=lambda env: 2.5 * env[Variable.PRESSURE] * env[Variable.VOLUME],
-        pretty="Q = 2.5·P·ΔV"
-    ),
-    Formula(
-        id="Q = 2.5 * A", section="mkt_thermo",
-        requires=[Variable.WORK],
-        result_variable=Variable.HEAT,
-        calc=lambda env: 2.5 * env[Variable.WORK],
-        pretty="Q = 2.5·A"
-    ),
-    Formula(
-        id="U_thermo = 1.5 * P * V", section="mkt_thermo",
-        requires=[Variable.PRESSURE, Variable.VOLUME],
-        result_variable=Variable.INTERNAL_ENERGY,
-        calc=lambda env: 1.5 * env[Variable.PRESSURE] * env[Variable.VOLUME],
-        pretty="ΔU = 1.5·P·ΔV"
-    ),
-    Formula(
-        id="U_thermo = 1.5 * A", section="mkt_thermo",
-        requires=[Variable.WORK],
-        result_variable=Variable.INTERNAL_ENERGY,
-        calc=lambda env: 1.5 * env[Variable.WORK],
-        pretty="ΔU = 1.5·A"
-    ),
-
-    # =========================================================
-    # 6. ЭЛЕКТРОДИНАМИКА И ЦЕПИ
-    # =========================================================
-    Formula(
-        id="I = U / R", section="electro_dynamics",
-        requires=[Variable.VOLTAGE, Variable.RESISTANCE],
-        result_variable=Variable.CURRENT,
-        calc=lambda env: env[Variable.VOLTAGE] / env[Variable.RESISTANCE],
-        pretty="I = U / R"
-    ),
-    Formula(
-        id="U = I * R", section="electro_dynamics",
-        requires=[Variable.CURRENT, Variable.RESISTANCE],
-        result_variable=Variable.VOLTAGE,
-        calc=lambda env: env[Variable.CURRENT] * env[Variable.RESISTANCE],
-        pretty="U = I·R"
-    ),
-    Formula(
-        id="R = U / I", section="electro_dynamics",
-        requires=[Variable.VOLTAGE, Variable.CURRENT],
-        result_variable=Variable.RESISTANCE,
-        calc=lambda env: env[Variable.VOLTAGE] / env[Variable.CURRENT],
-        pretty="R = U / I"
-    ),
-    Formula(
-        id="I = E_emf / (R_electro + r_internal)", section="electro_dynamics",
-        requires=[Variable.EMF, Variable.RESISTANCE, Variable.INTERNAL_RESISTANCE],
-        result_variable=Variable.CURRENT,
-        calc=lambda env: env[Variable.EMF] / (env[Variable.RESISTANCE] + env[Variable.INTERNAL_RESISTANCE]),
-        pretty="I = ℰ / (R + r)"
-    ),
-    Formula(
-        id="E_emf = I * (R_electro + r_internal)", section="electro_dynamics",
-        requires=[Variable.CURRENT, Variable.RESISTANCE, Variable.INTERNAL_RESISTANCE],
-        result_variable=Variable.EMF,
-        calc=lambda env: env[Variable.CURRENT] * (env[Variable.RESISTANCE] + env[Variable.INTERNAL_RESISTANCE]),
-        pretty="ℰ = I·(R + r)"
-    ),
-    Formula(
-        id="I_sc = E_emf / r_internal", section="electro_dynamics",
-        requires=[Variable.EMF, Variable.INTERNAL_RESISTANCE],
-        result_variable=Variable.SHORT_CIRCUIT_CURRENT,
-        calc=lambda env: env[Variable.EMF] / env[Variable.INTERNAL_RESISTANCE],
-        pretty="Iкз = ℰ / r"
-    ),
-    Formula(
-        id="eta = R_electro / (R_electro + r_internal)", section="efficiency",
-        requires=[Variable.RESISTANCE, Variable.INTERNAL_RESISTANCE],
-        result_variable=Variable.EFFICIENCY,
-        calc=lambda env: env[Variable.RESISTANCE] / (env[Variable.RESISTANCE] + env[Variable.INTERNAL_RESISTANCE]),
-        pretty="η = R / (R + r)"
-    ),
-    Formula(
-        id="R = rho * l / S", section="electro_dynamics",
-        requires=[Variable.RESISTIVITY, Variable.LENGTH, Variable.WIRE_AREA],
-        result_variable=Variable.RESISTANCE,
-        calc=lambda env: env[Variable.RESISTIVITY] * env[Variable.LENGTH] / env[Variable.WIRE_AREA],
-        pretty="R = (ρ·l) / S"
-    ),
-    Formula(
-        id="F = k * q1 * q2 / r^2", section="electro_dynamics",
-        requires=[Variable.CHARGE_1, Variable.CHARGE_2, Variable.RADIUS],
-        result_variable=Variable.COULOMB_FORCE,
-        calc=lambda env: CONSTANTS["k_coulomb"] * env[Variable.CHARGE_1] * env[Variable.CHARGE_2] / (env[Variable.RADIUS] ** 2),
-        pretty="F = k·(q₁·q₂) / r²"
-    ),
-    Formula(
-        id="E = F / q", section="electro_dynamics",
-        requires=[Variable.COULOMB_FORCE, Variable.CHARGE],
-        result_variable=Variable.ELECTRIC_FIELD,
-        calc=lambda env: env[Variable.COULOMB_FORCE] / env[Variable.CHARGE],
-        pretty="E = F / q"
-    ),
-    Formula(
-        id="C = q / U", section="electro_dynamics",
-        requires=[Variable.CHARGE, Variable.VOLTAGE],
-        result_variable=Variable.CAPACITANCE,
-        calc=lambda env: env[Variable.CHARGE] / env[Variable.VOLTAGE],
-        pretty="C = q / U"
-    ),
-    Formula(
-        id="W = C * U^2 / 2", section="electro_dynamics",
-        requires=[Variable.CAPACITANCE, Variable.VOLTAGE],
-        result_variable=Variable.ELECTRIC_ENERGY,
-        calc=lambda env: (env[Variable.CAPACITANCE] * (env[Variable.VOLTAGE] ** 2)) / 2,
-        pretty="W = (C·U²) / 2"
-    ),
-    Formula(
-        id="P_electro = I^2 * R_electro", section="electro_dynamics",
-        requires=[Variable.CURRENT, Variable.RESISTANCE],
-        result_variable=Variable.ELECTRIC_POWER,
-        calc=lambda env: (env[Variable.CURRENT] ** 2) * env[Variable.RESISTANCE],
-        pretty="P = I²·R"
-    ),
-    Formula(
-        id="P_electro = I * U", section="electro_dynamics",
-        requires=[Variable.CURRENT, Variable.VOLTAGE],
-        result_variable=Variable.ELECTRIC_POWER,
-        calc=lambda env: env[Variable.CURRENT] * env[Variable.VOLTAGE],
-        pretty="P = I·U"
-    ),
-    Formula(
-        id="Q_joule = I^2 * R_electro * t", section="electro_dynamics",
-        requires=[Variable.CURRENT, Variable.RESISTANCE, Variable.TIME],
-        result_variable=Variable.JOULE_HEAT,
-        calc=lambda env: (env[Variable.CURRENT] ** 2) * env[Variable.RESISTANCE] * env[Variable.TIME],
-        pretty="Q = I²·R·t"
-    ),
-
-    # =========================================================
-    # 7. МАГНЕТИЗМ И СВЯЗЬ С МЕХАНИКОЙ
-    # =========================================================
-    Formula(
-        id="a = F_A / m", section="magnetism",
-        requires=[Variable.AMPERE_FORCE, Variable.MASS],
-        result_variable=Variable.ACCELERATION,
-        calc=lambda env: env[Variable.AMPERE_FORCE] / env[Variable.MASS],
-        pretty="a = Fа / m"
-    ),
-    Formula(
-        id="F_A = I * B * l", section="magnetism",
-        requires=[Variable.CURRENT, Variable.MAGNETIC_FIELD, Variable.LENGTH],
-        result_variable=Variable.AMPERE_FORCE,
-        calc=lambda env: env[Variable.CURRENT] * env[Variable.MAGNETIC_FIELD] * env[Variable.LENGTH],
-        pretty="Fа = I·B·l"
-    ),
-    Formula(
-        id="F = F_A", section="magnetism",
-        requires=[Variable.AMPERE_FORCE],
+        name="Сила F вверх по наклонной плоскости с ускорением (Задание №9)",
         result_variable=Variable.FORCE,
-        calc=lambda env: env[Variable.AMPERE_FORCE],
-        pretty="F = Fа"
+        requires=(
+            Variable.MASS,
+            Variable.ACCELERATION,
+            Variable.G_ACCEL,
+            Variable.ANGLE,
+            Variable.FRICTION_COEFF,
+        ),
+        calc=lambda d: d[Variable.MASS]
+        * (
+            d[Variable.ACCELERATION]
+            + d[Variable.G_ACCEL] * _deg_sin(d[Variable.ANGLE])
+            + d[Variable.FRICTION_COEFF] * d[Variable.G_ACCEL] * _deg_cos(d[Variable.ANGLE])
+        ),
+        pretty="F = m·(a + g·sin(α) + μ·g·cos(α))",
     ),
     Formula(
-        id="F_L = q * v * B", section="magnetism",
-        requires=[Variable.CHARGE, Variable.VELOCITY, Variable.MAGNETIC_FIELD],
-        result_variable=Variable.LORENTZ_FORCE,
-        calc=lambda env: env[Variable.CHARGE] * env[Variable.VELOCITY] * env[Variable.MAGNETIC_FIELD],
-        pretty="Fл = q·v·B"
+        name="Растяжение пружины по закону Гука x = F_тяги / k (Задание №3)",
+        result_variable=Variable.SPRING_X,
+        requires=(Variable.FORCE_PULL, Variable.SPRING_K),
+        calc=lambda d: _safe_div(d[Variable.FORCE_PULL], d[Variable.SPRING_K]),
+        pretty="x = F_тяги / k",
     ),
     Formula(
-        id="R = m * v / (q * B)", section="magnetism",
-        requires=[Variable.MASS, Variable.VELOCITY, Variable.CHARGE, Variable.MAGNETIC_FIELD],
-        result_variable=Variable.RADIUS,
-        calc=lambda env: (env[Variable.MASS] * env[Variable.VELOCITY]) / (env[Variable.CHARGE] * env[Variable.MAGNETIC_FIELD]),
-        pretty="R = (m·v) / (q·B)"
+        name="Вес тела в ускоренно движущемся вверх лифте (Задание №4)",
+        result_variable=Variable.WEIGHT,
+        requires=(Variable.MASS, Variable.G_ACCEL, Variable.ACCELERATION),
+        calc=lambda d: d[Variable.MASS] * (d[Variable.G_ACCEL] + d[Variable.ACCELERATION]),
+        pretty="P = m·(g + a)",
     ),
     Formula(
-        id="T_period = 2 * pi * R / v", section="mechanics",
-        requires=[Variable.RADIUS, Variable.VELOCITY],
-        result_variable=Variable.PERIOD,
-        calc=lambda env: (2 * math.pi * env[Variable.RADIUS]) / env[Variable.VELOCITY],
-        pretty="T = (2π·R) / v"
+        name="Система 2х2 для связанных грузов: натяжение нити T (Задание №5)",
+        result_variable=Variable.TENSION,
+        requires=(
+            Variable.MASS_1,
+            Variable.MASS_2,
+            Variable.FORCE,
+            Variable.FRICTION_COEFF,
+            Variable.G_ACCEL,
+        ),
+        calc=lambda d: math_engine.solve_linear_2x2(
+            d[Variable.MASS_1],
+            1.0,
+            d[Variable.FORCE] - d[Variable.FRICTION_COEFF] * d[Variable.MASS_1] * d[Variable.G_ACCEL],
+            d[Variable.MASS_2],
+            -1.0,
+            -d[Variable.FRICTION_COEFF] * d[Variable.MASS_2] * d[Variable.G_ACCEL],
+        )[1],
+        pretty="Система 2×2: {m1·a + T = F - μ·m1·g; m2·a - T = -μ·m2·g} ➔ T = F·m2 / (m1 + m2)",
     ),
     Formula(
-        id="T_period = 2 * pi * m / (q * B)", section="magnetism",
-        requires=[Variable.MASS, Variable.CHARGE, Variable.MAGNETIC_FIELD],
-        result_variable=Variable.PERIOD,
-        calc=lambda env: (2 * math.pi * env[Variable.MASS]) / (env[Variable.CHARGE] * env[Variable.MAGNETIC_FIELD]),
-        pretty="T = (2π·m) / (q·B)"
+        name="Угол наклонной плоскости при равномерном подъёме и спуске (Задание №6)",
+        result_variable=Variable.ANGLE,
+        requires=(Variable.FORCE_PULL, Variable.MASS, Variable.G_ACCEL),
+        calc=lambda d: math.degrees(
+            math.asin(_safe_div(d[Variable.FORCE_PULL], 2.0 * d[Variable.MASS] * d[Variable.G_ACCEL]))
+        ),
+        pretty="α = arcsin(F_тяги / (2·m·g))",
     ),
     Formula(
-        id="Phi = B * S_area", section="magnetism",
-        requires=[Variable.MAGNETIC_FIELD, Variable.AREA],
-        result_variable=Variable.MAGNETIC_FLUX,
-        calc=lambda env: env[Variable.MAGNETIC_FIELD] * env[Variable.AREA],
-        pretty="Φ = B·S"
+        name="Скорость после абсолютно неупругого соударения (Задание №8)",
+        result_variable=Variable.U_SPEED,
+        requires=(Variable.MASS_1, Variable.MASS_2, Variable.VELOCITY_1, Variable.VELOCITY_2),
+        calc=lambda d: _safe_div(
+            d[Variable.MASS_1] * d[Variable.VELOCITY_1] + d[Variable.MASS_2] * d[Variable.VELOCITY_2],
+            d[Variable.MASS_1] + d[Variable.MASS_2],
+        ),
+        pretty="u = (m1·v1 + m2·v2) / (m1 + m2)",
     ),
     Formula(
-        id="B = Phi / S_area", section="magnetism",
-        requires=[Variable.MAGNETIC_FLUX, Variable.AREA],
-        result_variable=Variable.MAGNETIC_FIELD,
-        calc=lambda env: env[Variable.MAGNETIC_FLUX] / env[Variable.AREA],
-        pretty="B = Φ / S"
+        name="Механический импульс тела",
+        result_variable=Variable.MOMENTUM,
+        requires=(Variable.MASS, Variable.VELOCITY),
+        calc=lambda d: d[Variable.MASS] * d[Variable.VELOCITY],
+        pretty="p = m·v",
     ),
     Formula(
-        id="E_ind = delta_Phi / delta_t", section="magnetism",
-        requires=[Variable.FLUX_DELTA, Variable.TIME_DELTA],
-        result_variable=Variable.INDUCED_EMF,
-        calc=lambda env: env[Variable.FLUX_DELTA] / env[Variable.TIME_DELTA],
-        pretty="ℰ = ΔΦ / Δt"
+        name="Масса через плотность и объём",
+        result_variable=Variable.MASS,
+        requires=(Variable.DENSITY, Variable.VOLUME),
+        calc=lambda d: d[Variable.DENSITY] * d[Variable.VOLUME],
+        pretty="m = ρ·V",
     ),
     Formula(
-        id="W_mag = L_ind * I^2 / 2", section="magnetism",
-        requires=[Variable.INDUCTANCE, Variable.CURRENT],
-        result_variable=Variable.MAGNETIC_ENERGY,
-        calc=lambda env: (env[Variable.INDUCTANCE] * (env[Variable.CURRENT] ** 2)) / 2,
-        pretty="W = (L·I²) / 2"
-    ),
-    Formula(
-        id="T = 2 * pi * sqrt(L_ind * C)", section="oscillations",
-        requires=[Variable.INDUCTANCE, Variable.CAPACITANCE],
-        result_variable=Variable.THOMSON_PERIOD,
-        calc=lambda env: 2 * math.pi * math.sqrt(env[Variable.INDUCTANCE] * env[Variable.CAPACITANCE]),
-        pretty="T = 2π·√(L·C)"
-    ),
-    Formula(
-        id="T = 2 * pi * sqrt(m / k)", section="oscillations",
-        requires=[Variable.MASS, Variable.STIFFNESS],
-        result_variable=Variable.PERIOD,
-        calc=lambda env: 2 * math.pi * math.sqrt(env[Variable.MASS] / env[Variable.STIFFNESS]),
-        pretty="T = 2π·√(m / k)"
-    ),
-    Formula(
-        id="T = 2 * pi * sqrt(l / g)", section="oscillations",
-        requires=[Variable.LENGTH],
-        result_variable=Variable.PERIOD,
-        calc=lambda env: 2 * math.pi * math.sqrt(env[Variable.LENGTH] / CONSTANTS["g"]),
-        pretty="T = 2π·√(l / g)"
-    ),
-    Formula(
-        id="v_wave = lambda_wave * nu_freq", section="oscillations",
-        requires=[Variable.WAVELENGTH, Variable.FREQUENCY],
-        result_variable=Variable.WAVE_SPEED,
-        calc=lambda env: env[Variable.WAVELENGTH] * env[Variable.FREQUENCY],
-        pretty="v = λ·ν"
-    ),
-
-    # =========================================================
-    # 8. ОПТИКА И КВАНТЫ
-    # =========================================================
-    Formula(
-        id="n = c / v", section="optics",
-        requires=[Variable.LIGHT_SPEED_MEDIUM],
-        result_variable=Variable.REFRACTIVE_INDEX,
-        calc=lambda env: CONSTANTS["c_light"] / env[Variable.LIGHT_SPEED_MEDIUM],
-        pretty="n = c / v"
-    ),
-    Formula(
-        id="v_light = c / n", section="optics",
-        requires=[Variable.REFRACTIVE_INDEX],
-        result_variable=Variable.LIGHT_SPEED_MEDIUM,
-        calc=lambda env: CONSTANTS["c_light"] / env[Variable.REFRACTIVE_INDEX],
-        pretty="v = c / n"
-    ),
-    Formula(
-        id="1 / F = 1 / d + 1 / f", section="optics",
-        requires=[Variable.OBJECT_DISTANCE, Variable.IMAGE_DISTANCE],
-        result_variable=Variable.FOCAL_LENGTH,
-        calc=lambda env: 1.0 / ((1.0 / env[Variable.OBJECT_DISTANCE]) + (1.0 / env[Variable.IMAGE_DISTANCE])),
-        pretty="1/F = 1/d + 1/f"
-    ),
-    Formula(
-        id="D = 1 / F", section="optics",
-        requires=[Variable.FOCAL_LENGTH],
-        result_variable=Variable.OPTICAL_POWER,
-        calc=lambda env: 1.0 / env[Variable.FOCAL_LENGTH],
-        pretty="D = 1 / F"
-    ),
-    Formula(
-        id="F_opt = 1 / D", section="optics",
-        requires=[Variable.OPTICAL_POWER],
-        result_variable=Variable.FOCAL_LENGTH,
-        calc=lambda env: 1.0 / env[Variable.OPTICAL_POWER],
-        pretty="F = 1 / D"
-    ),
-    Formula(
-        id="f = d * F_opt / (d - F_opt)", section="optics",
-        requires=[Variable.OBJECT_DISTANCE, Variable.FOCAL_LENGTH],
-        result_variable=Variable.IMAGE_DISTANCE,
-        calc=lambda env: (env[Variable.OBJECT_DISTANCE] * env[Variable.FOCAL_LENGTH]) / (env[Variable.OBJECT_DISTANCE] - env[Variable.FOCAL_LENGTH]),
-        pretty="f = (d·F) / (d − F)"
-    ),
-    Formula(
-        id="Gamma = f / d", section="optics",
-        requires=[Variable.IMAGE_DISTANCE, Variable.OBJECT_DISTANCE],
-        result_variable=Variable.MAGNIFICATION,
-        calc=lambda env: env[Variable.IMAGE_DISTANCE] / env[Variable.OBJECT_DISTANCE],
-        pretty="Γ = f / d"
-    ),
-    Formula(
-        id="d_lattice * sin(alpha) = k_order * lambda_wave", section="optics",
-        requires=[Variable.DIFFRACTION_D, Variable.DIFFRACTION_ORDER],  # угол альфа вычисляется в расширенной тригонометрии
-        result_variable=Variable.WAVELENGTH,
-        calc=lambda env: env[Variable.DIFFRACTION_D] / env[Variable.DIFFRACTION_ORDER],
-        pretty="d·sin(α) = k·λ"
-    ),
-    Formula(
-        id="E = h * nu_freq", section="quantum",
-        requires=[Variable.FREQUENCY],
-        result_variable=Variable.PHOTON_ENERGY,
-        calc=lambda env: CONSTANTS["h"] * env[Variable.FREQUENCY],
-        pretty="E = h·ν"
-    ),
-    Formula(
-        id="E_k = h * nu_freq - A_vyh", section="quantum",
-        requires=[Variable.FREQUENCY, Variable.WORK_FUNCTION],
-        result_variable=Variable.ELECTRON_KINETIC,
-        calc=lambda env: CONSTANTS["h"] * env[Variable.FREQUENCY] - env[Variable.WORK_FUNCTION],
-        pretty="Eк = h·ν − Aвых"
-    ),
-    Formula(
-        id="p = h / lambda_wave", section="quantum",
-        requires=[Variable.WAVELENGTH],
-        result_variable=Variable.PHOTON_MOMENTUM,
-        calc=lambda env: CONSTANTS["h"] / env[Variable.WAVELENGTH],
-        pretty="p = h / λ"
-    ),
-    Formula(
-        id="N = N0 * 2^(-t / T_half)", section="quantum",
-        requires=[Variable.INITIAL_PARTICLES, Variable.TIME, Variable.HALF_LIFE],
-        result_variable=Variable.PARTICLE_COUNT,
-        calc=lambda env: env[Variable.INITIAL_PARTICLES] * (2.0 ** (-env[Variable.TIME] / env[Variable.HALF_LIFE])),
-        pretty="N = N₀·2^(−t / T½)"
-    ),
-    Formula(
-        id="E = m * c^2", section="quantum",
-        requires=[Variable.MASS],
-        result_variable=Variable.REST_ENERGY,
-        calc=lambda env: env[Variable.MASS] * (CONSTANTS["c_light"] ** 2),
-        pretty="E = m·c²"
-    ),
-    Formula(
-        id="Delta_E = Delta_m * c^2", section="quantum",
-        requires=[Variable.MASS_DEFECT],
-        result_variable=Variable.ENERGY_DEFECT,
-        calc=lambda env: env[Variable.MASS_DEFECT] * (CONSTANTS["c_light"] ** 2),
-        pretty="ΔE = Δm·c²"
-    ),
-
-    # =========================================================
-    # ВЛАЖНОСТЬ ВОЗДУХА
-    # =========================================================
-    Formula(
-        id="phi = (p / p_sat) * 100", section="mkt_thermo",
-        requires=[Variable.VAPOR_PRESSURE, Variable.SATURATED_VAPOR_PRESSURE],
-        result_variable=Variable.HUMIDITY,
-        calc=lambda env: env[Variable.VAPOR_PRESSURE] / env[Variable.SATURATED_VAPOR_PRESSURE],
-        pretty="φ = p / pнас"
-    ),
-    Formula(
-        id="p = (phi * p_sat)", section="mkt_thermo",
-        requires=[Variable.HUMIDITY, Variable.SATURATED_VAPOR_PRESSURE],
-        result_variable=Variable.VAPOR_PRESSURE,
-        calc=lambda env: env[Variable.HUMIDITY] * env[Variable.SATURATED_VAPOR_PRESSURE],
-        pretty="p = φ·pнас"
-    ),
-    Formula(
-        id="phi = (rho / rho_sat) * 100", section="mkt_thermo",
-        requires=[Variable.VAPOR_DENSITY, Variable.SATURATED_VAPOR_DENSITY],
-        result_variable=Variable.HUMIDITY,
-        calc=lambda env: env[Variable.VAPOR_DENSITY] / env[Variable.SATURATED_VAPOR_DENSITY],
-        pretty="φ = ρ / ρнас"
-    ),
-
-    # =========================================================
-    # ДВИЖЕНИЕ ПРОВОДНИКА В МАГНИТНОМ ПОЛЕ
-    # =========================================================
-    Formula(
-        id="E_ind = B * v * l", section="magnetism",
-        requires=[Variable.MAGNETIC_FIELD, Variable.VELOCITY, Variable.LENGTH],
-        result_variable=Variable.INDUCED_EMF,
-        calc=lambda env: env[Variable.MAGNETIC_FIELD] * env[Variable.VELOCITY] * env[Variable.LENGTH],
-        pretty="ℰ = B·v·l"
-    ),
-
-    # =========================================================
-    # ФОТОЭФФЕКТ: ЗАДЕРЖИВАЮЩЕЕ НАПРЯЖЕНИЕ И КРАСНАЯ ГРАНИЦА
-    # =========================================================
-    Formula(
-        id="E_k = e * U_stop", section="quantum",
-        requires=[Variable.STOPPING_VOLTAGE],
-        result_variable=Variable.ELECTRON_KINETIC,
-        calc=lambda env: CONSTANTS.get("e_charge", CONSTANTS.get("e", 1.602176634e-19)) * env[Variable.STOPPING_VOLTAGE],
-        pretty="Eк = e·Uзад"
-    ),
-    Formula(
-        id="U_stop = E_k / e", section="quantum",
-        requires=[Variable.ELECTRON_KINETIC],
-        result_variable=Variable.STOPPING_VOLTAGE,
-        calc=lambda env: env[Variable.ELECTRON_KINETIC] / CONSTANTS.get("e_charge", CONSTANTS.get("e", 1.602176634e-19)),
-        pretty="Uзад = Eк / e"
-    ),
-    Formula(
-        id="nu_red = A_vyh / h", section="quantum",
-        requires=[Variable.WORK_FUNCTION],
-        result_variable=Variable.RED_LIMIT_FREQ,
-        calc=lambda env: env[Variable.WORK_FUNCTION] / CONSTANTS["h"],
-        pretty="νкр = Aвых / h"
-    ),
-
-    # =========================================================
-    # АКТИВНОСТЬ И РАСПАД
-    # =========================================================
-    Formula(
-        id="activity = lambda_decay * N", section="quantum",
-        requires=[Variable.DECAY_CONSTANT, Variable.PARTICLE_COUNT],
-        result_variable=Variable.ACTIVITY,
-        calc=lambda env: env[Variable.DECAY_CONSTANT] * env[Variable.PARTICLE_COUNT],
-        pretty="A = λ·N"
+        name="Сила Архимеда",
+        result_variable=Variable.ARCHIMEDES_FORCE,
+        requires=(Variable.DENSITY, Variable.G_ACCEL, Variable.VOLUME),
+        calc=lambda d: d[Variable.DENSITY] * d[Variable.G_ACCEL] * d[Variable.VOLUME],
+        pretty="F_A = ρ·g·V",
     ),
 
     # =========================================================================
-    # МАТЕМАТИЧЕСКИЙ АНАЛИЗ В ФИЗИКЕ (ПРОИЗВОДНЫЕ И ИНТЕГРАЛЫ)
+    # 4. РАБОТА, ЭНЕРГИЯ, МОЩНОСТЬ И МОСТЫ СОХРАНЕНИЯ
     # =========================================================================
-
-    # 1. Символьное дифференцирование: v(t) = dx/dt
     Formula(
-        id="v(t) = diff(x(t), t)",
-        section="calculus",
-        requires=[Variable.POSITION_FUNC],
-        result_variable=Variable.VELOCITY_FUNC,
-        calc=lambda env: env[Variable.POSITION_FUNC].diff("t"),
-        pretty="v(t) = x'(t)"
+        name="Кинетическая энергия",
+        result_variable=Variable.KINETIC_ENERGY,
+        requires=(Variable.MASS, Variable.VELOCITY),
+        calc=lambda d: 0.5 * d[Variable.MASS] * (d[Variable.VELOCITY] ** 2),
+        pretty="E_k = m·v² / 2",
     ),
-
-    # 2. Символьное дифференцирование: a(t) = dv/dt
     Formula(
-        id="a(t) = diff(v(t), t)",
-        section="calculus",
-        requires=[Variable.VELOCITY_FUNC],
-        result_variable=Variable.ACCELERATION_FUNC,
-        calc=lambda env: env[Variable.VELOCITY_FUNC].diff("t"),
-        pretty="a(t) = v'(t)"
+        name="Начальная кинетическая энергия при торможении",
+        result_variable=Variable.KINETIC_ENERGY,
+        requires=(Variable.MASS, Variable.VELOCITY_0),
+        calc=lambda d: 0.5 * d[Variable.MASS] * (d[Variable.VELOCITY_0] ** 2),
+        pretty="E_k = m·v0² / 2",
     ),
-
-    # 3. Символьное дифференцирование: E_ind(t) = -dPhi/dt
     Formula(
-        id="E_ind(t) = -diff(Phi(t), t)",
-        section="calculus",
-        requires=[Variable.MAGNETIC_FLUX_FUNC],
-        result_variable=Variable.EMF,
-        calc=lambda env: -env[Variable.MAGNETIC_FLUX_FUNC].diff("t"),
-        pretty="ℰ(t) = -Φ'(t)"
+        name="Потенциальная энергия в поле тяжести",
+        result_variable=Variable.POTENTIAL_ENERGY,
+        requires=(Variable.MASS, Variable.G_ACCEL, Variable.HEIGHT),
+        calc=lambda d: d[Variable.MASS] * d[Variable.G_ACCEL] * d[Variable.HEIGHT],
+        pretty="E_p = m·g·h",
     ),
-
-    # 4. Вычисление координаты в момент времени t: x = x(t)
     Formula(
-        id="x = x(t)_eval",
-        section="calculus",
-        requires=[Variable.POSITION_FUNC, Variable.TIME],
-        result_variable=Variable.DISTANCE,
-        calc=lambda env: env[Variable.POSITION_FUNC].eval({"t": env[Variable.TIME]}),
-        pretty="x = x(t)"
+        name="Высота через потенциальную энергию",
+        result_variable=Variable.HEIGHT,
+        requires=(Variable.POTENTIAL_ENERGY, Variable.MASS, Variable.G_ACCEL),
+        calc=lambda d: _safe_div(
+            d[Variable.POTENTIAL_ENERGY], d[Variable.MASS] * d[Variable.G_ACCEL]
+        ),
+        pretty="h = E_p / (m·g)",
     ),
-
-    # 5. Вычисление скорости в момент времени t: v = v(t)
     Formula(
-        id="v = v(t)_eval",
-        section="calculus",
-        requires=[Variable.VELOCITY_FUNC, Variable.TIME],
-        result_variable=Variable.VELOCITY,
-        calc=lambda env: env[Variable.VELOCITY_FUNC].eval({"t": env[Variable.TIME]}),
-        pretty="v = v(t)"
+        name="Полная механическая энергия",
+        result_variable=Variable.MECHANICAL_ENERGY,
+        requires=(Variable.KINETIC_ENERGY, Variable.POTENTIAL_ENERGY),
+        calc=lambda d: d[Variable.KINETIC_ENERGY] + d[Variable.POTENTIAL_ENERGY],
+        pretty="E_mech = E_k + E_p",
     ),
-
-    # 6. Вычисление ускорения в момент времени t: a = a(t)
     Formula(
-        id="a = a(t)_eval",
-        section="calculus",
-        requires=[Variable.ACCELERATION_FUNC, Variable.TIME],
-        result_variable=Variable.ACCELERATION,
-        calc=lambda env: env[Variable.ACCELERATION_FUNC].eval({"t": env[Variable.TIME]}),
-        pretty="a = a(t)"
-    ),
-
-    # 7. Интеграл переменной силы: Работа A = ∫ F(x) dx от x1 до x2
-    Formula(
-        id="A = int(F(x), x1, x2)",
-        section="calculus",
-        requires=[Variable.FORCE_FUNC, Variable.COORD_START, Variable.COORD_END],
+        name="Механическая работа через силу и путь",
         result_variable=Variable.WORK,
-        calc=lambda env: env[Variable.FORCE_FUNC].definite_integral(
-            "x", env[Variable.COORD_START], env[Variable.COORD_END]
-        ),
-        pretty="A = ∫ F(x) dx [x₁ → x₂]"
+        requires=(Variable.FORCE, Variable.DISPLACEMENT),
+        calc=lambda d: abs(d[Variable.FORCE]) * d[Variable.DISPLACEMENT],
+        pretty="A = F·S",
+    ),
+    Formula(
+        name="Мост: Работа равна изменению кинетической энергии",
+        result_variable=Variable.WORK,
+        requires=(Variable.KINETIC_ENERGY,),
+        calc=lambda d: d[Variable.KINETIC_ENERGY],
+        pretty="A = E_k",
+        is_bridge=True,
+    ),
+    Formula(
+        name="Мост: Работа подъёма равна потенциальной энергии",
+        result_variable=Variable.WORK,
+        requires=(Variable.POTENTIAL_ENERGY,),
+        calc=lambda d: d[Variable.POTENTIAL_ENERGY],
+        pretty="A = E_p",
+        is_bridge=True,
+    ),
+    Formula(
+        name="Мост: Закон сохранения энергии E_p = E_k",
+        result_variable=Variable.POTENTIAL_ENERGY,
+        requires=(Variable.KINETIC_ENERGY,),
+        calc=lambda d: d[Variable.KINETIC_ENERGY],
+        pretty="E_p = E_k",
+        is_bridge=True,
+    ),
+    Formula(
+        name="Механическая мощность N = A / t",
+        result_variable=Variable.POWER_MECH,
+        requires=(Variable.WORK, Variable.TIME),
+        calc=lambda d: _safe_div(d[Variable.WORK], d[Variable.TIME]),
+        pretty="N = A / t",
+    ),
+    Formula(
+        name="Затраченная электрическая мощность через КПД (Тест Подъёмник)",
+        result_variable=Variable.POWER_EL,
+        requires=(Variable.POWER_MECH, Variable.EFFICIENCY),
+        calc=lambda d: _safe_div(d[Variable.POWER_MECH], d[Variable.EFFICIENCY]),
+        pretty="P_el = N / η",
     ),
 
-    # 8. Интеграл переменного тока: Заряд q = ∫ i(t) dt от t1 до t2
+    # =========================================================================
+    # 5. ТЕРМОДИНАМИКА И ТЕПЛОВЫЕ МОСТЫ
+    # =========================================================================
     Formula(
-        id="q = int(i(t), t1, t2)",
-        section="calculus",
-        requires=[Variable.CURRENT_FUNC, Variable.TIME_START, Variable.TIME_END],
-        result_variable=Variable.CHARGE,
-        calc=lambda env: env[Variable.CURRENT_FUNC].definite_integral(
-            "t", env[Variable.TIME_START], env[Variable.TIME_END]
-        ),
-        pretty="q = ∫ i(t) dt [t₁ → t₂]"
-    ),
-    # =========================================================
-    # МОСТЫ И ОБРАТНЫЕ ФОРМУЛЫ ДЛЯ ЦЕПОЧЕК
-    # =========================================================
-
-    # 1. Мосты эквивалентности потенциалов и напряжений
-    Formula(
-        id="U = E_ind", section="electro_dynamics",
-        requires=[Variable.INDUCED_EMF],
-        result_variable=Variable.VOLTAGE,
-        calc=lambda env: env[Variable.INDUCED_EMF],
-        pretty="U = ℰ"
-    ),
-    Formula(
-        id="U = E_emf", section="electro_dynamics",
-        requires=[Variable.EMF],
-        result_variable=Variable.VOLTAGE,
-        calc=lambda env: env[Variable.EMF],
-        pretty="U = ℰ"
-    ),
-    Formula(
-        id="U = U_stop", section="quantum",
-        requires=[Variable.STOPPING_VOLTAGE],
-        result_variable=Variable.VOLTAGE,
-        calc=lambda env: env[Variable.STOPPING_VOLTAGE],
-        pretty="U = Uзад"
-    ),
-
-    # 2. Мосты теплоты (термодинамика -> тепловые машины)
-    Formula(
-        id="Q1_hot = Q", section="efficiency",
-        requires=[Variable.HEAT],
-        result_variable=Variable.HEAT_HOT,
-        calc=lambda env: env[Variable.HEAT],
-        pretty="Q₁ = Q"
-    ),
-    Formula(
-        id="Q_joule = Q", section="electro_dynamics",
-        requires=[Variable.HEAT],
-        result_variable=Variable.JOULE_HEAT,
-        calc=lambda env: env[Variable.HEAT],
-        pretty="Qдж = Q"
-    ),
-    Formula(
-        id="Q = Q_joule", section="electro_dynamics",
-        requires=[Variable.JOULE_HEAT],
+        name="Количество теплоты при нагревании",
         result_variable=Variable.HEAT,
-        calc=lambda env: env[Variable.JOULE_HEAT],
-        pretty="Q = Qдж"
+        requires=(Variable.SPECIFIC_HEAT, Variable.MASS, Variable.DELTA_TEMP),
+        calc=lambda d: d[Variable.SPECIFIC_HEAT] * d[Variable.MASS] * d[Variable.DELTA_TEMP],
+        pretty="Q = c·m·ΔT",
     ),
-
-    # 3. Обратная формула скорости в магнитном поле: v = q*B*R / m
     Formula(
-        id="v = q * B * R / m", section="magnetism",
-        requires=[Variable.CHARGE, Variable.MAGNETIC_FIELD, Variable.RADIUS, Variable.MASS],
-        result_variable=Variable.VELOCITY,
-        calc=lambda env: (env[Variable.CHARGE] * env[Variable.MAGNETIC_FIELD] * env[Variable.RADIUS]) / env[Variable.MASS],
-        pretty="v = (q·B·R) / m"
+        name="Мост: Переход механической работы в теплоту Q = A",
+        result_variable=Variable.HEAT,
+        requires=(Variable.WORK,),
+        calc=lambda d: d[Variable.WORK],
+        pretty="Q = A",
+        is_bridge=True,
     ),
-
-    # 4. Мост работы и энергии: A = Delta_Ek
     Formula(
-        id="A = E_k", section="mechanics",
-        requires=[Variable.KINETIC_ENERGY],
-        result_variable=Variable.WORK,
-        calc=lambda env: env[Variable.KINETIC_ENERGY],
-        pretty="A = Eк"
+        name="Мост: Переход джоулева тепла в теплоту Q = Q_joule",
+        result_variable=Variable.HEAT,
+        requires=(Variable.Q_JOULE,),
+        calc=lambda d: d[Variable.Q_JOULE],
+        pretty="Q = Q_joule",
+        is_bridge=True,
     ),
-
-    # 5. Интеграл ускорения: v = ∫ a(t) dt от t1 до t2
     Formula(
-        id="v = int(a(t), t1, t2)",
-        section="calculus",
-        requires=[Variable.ACCELERATION_FUNC, Variable.TIME_START, Variable.TIME_END],
-        result_variable=Variable.VELOCITY,
-        calc=lambda env: env[Variable.ACCELERATION_FUNC].definite_integral(
-            "t", env[Variable.TIME_START], env[Variable.TIME_END]
+        name="Полезное тепло с учётом КПД нагревателя",
+        result_variable=Variable.HEAT,
+        requires=(Variable.Q_JOULE, Variable.EFFICIENCY),
+        calc=lambda d: d[Variable.Q_JOULE] * d[Variable.EFFICIENCY],
+        pretty="Q = η·Q_joule",
+    ),
+    Formula(
+        name="Мост: Теплота нагревателя Q1 = Q",
+        result_variable=Variable.HEAT_HOT,
+        requires=(Variable.HEAT,),
+        calc=lambda d: d[Variable.HEAT],
+        pretty="Q1 = Q",
+        is_bridge=True,
+    ),
+    Formula(
+        name="КПД тепловой машины",
+        result_variable=Variable.EFFICIENCY,
+        requires=(Variable.HEAT_HOT, Variable.HEAT_COLD),
+        calc=lambda d: _safe_div(
+            d[Variable.HEAT_HOT] - d[Variable.HEAT_COLD], d[Variable.HEAT_HOT]
         ),
-        pretty="v = ∫ a(t) dt [t₁ → t₂]"
+        pretty="η = (Q1 - Q2) / Q1",
+    ),
+    Formula(
+        name="Масса испарившейся жидкости m = Q / L (Тест Кипятильник)",
+        result_variable=Variable.MASS,
+        requires=(Variable.HEAT, Variable.LATENT_VAP),
+        calc=lambda d: _safe_div(d[Variable.HEAT], d[Variable.LATENT_VAP]),
+        pretty="m = Q / L_vap",
+    ),
+    Formula(
+        name="Нагрев стержня ΔT = Q / (c·m_rod)",
+        result_variable=Variable.DELTA_TEMP,
+        requires=(Variable.HEAT, Variable.SPECIFIC_HEAT, Variable.MASS_ROD),
+        calc=lambda d: _safe_div(
+            d[Variable.HEAT], d[Variable.SPECIFIC_HEAT] * d[Variable.MASS_ROD]
+        ),
+        pretty="ΔT = Q / (c·m_rod)",
+    ),
+
+    # =========================================================================
+    # 6. ЭЛЕКТРОДИНАМИКА И МАГНЕТИЗМ
+    # =========================================================================
+    Formula(
+        name="Закон Ома для участка цепи I = U / R",
+        result_variable=Variable.CURRENT,
+        requires=(Variable.VOLTAGE, Variable.RESISTANCE),
+        calc=lambda d: _safe_div(d[Variable.VOLTAGE], d[Variable.RESISTANCE]),
+        pretty="I = U / R",
+    ),
+    Formula(
+        name="Сила тока через электрическую мощность I = P_el / U",
+        result_variable=Variable.CURRENT,
+        requires=(Variable.POWER_EL, Variable.VOLTAGE),
+        calc=lambda d: _safe_div(d[Variable.POWER_EL], d[Variable.VOLTAGE]),
+        pretty="I = P_el / U",
+    ),
+    Formula(
+        name="Напряжение по закону Ома U = I·R",
+        result_variable=Variable.VOLTAGE,
+        requires=(Variable.CURRENT, Variable.RESISTANCE),
+        calc=lambda d: d[Variable.CURRENT] * d[Variable.RESISTANCE],
+        pretty="U = I·R",
+    ),
+    Formula(
+        name="Закон Джоуля–Ленца Q = I²·R·t",
+        result_variable=Variable.Q_JOULE,
+        requires=(Variable.CURRENT, Variable.RESISTANCE, Variable.TIME),
+        calc=lambda d: (d[Variable.CURRENT] ** 2) * d[Variable.RESISTANCE] * d[Variable.TIME],
+        pretty="Q_joule = I²·R·t",
+    ),
+    Formula(
+        name="ЭДС индукции в движущемся проводнике E_ind = B·v·l",
+        result_variable=Variable.EMF_IND,
+        requires=(Variable.MAGNETIC_B, Variable.VELOCITY, Variable.WIRE_LENGTH),
+        calc=lambda d: d[Variable.MAGNETIC_B] * d[Variable.VELOCITY] * d[Variable.WIRE_LENGTH],
+        pretty="E_ind = B·v·l",
+    ),
+    Formula(
+        name="Магнитный поток Φ = B·S",
+        result_variable=Variable.MAGNETIC_FLUX,
+        requires=(Variable.MAGNETIC_B, Variable.DISPLACEMENT),
+        calc=lambda d: d[Variable.MAGNETIC_B] * d[Variable.DISPLACEMENT],
+        pretty="Φ = B·S",
+    ),
+    Formula(
+        name="Амплитуда ЭДС вращающейся рамки E_ind = Φ·ω",
+        result_variable=Variable.EMF_IND,
+        requires=(Variable.MAGNETIC_FLUX, Variable.OMEGA),
+        calc=lambda d: d[Variable.MAGNETIC_FLUX] * d[Variable.OMEGA],
+        pretty="E_ind = Φ·ω",
+    ),
+    Formula(
+        name="Мост: Напряжение равно ЭДС индукции U = E_ind",
+        result_variable=Variable.VOLTAGE,
+        requires=(Variable.EMF_IND,),
+        calc=lambda d: d[Variable.EMF_IND],
+        pretty="U = E_ind",
+        is_bridge=True,
+    ),
+    Formula(
+        name="Скорость частицы в циклотроне v = q·B·R / m",
+        result_variable=Variable.VELOCITY,
+        requires=(Variable.CHARGE, Variable.MAGNETIC_B, Variable.RADIUS, Variable.MASS),
+        calc=lambda d: _safe_div(
+            d[Variable.CHARGE] * d[Variable.MAGNETIC_B] * d[Variable.RADIUS], d[Variable.MASS]
+        ),
+        pretty="v = q·B·R / m",
+    ),
+    Formula(
+        name="Формула Томсона T = 2π·√(L·C)",
+        result_variable=Variable.THOMSON_PERIOD,
+        requires=(Variable.INDUCTANCE, Variable.CAPACITANCE),
+        calc=lambda d: 2.0 * math.pi * _safe_sqrt(d[Variable.INDUCTANCE] * d[Variable.CAPACITANCE]),
+        pretty="T = 2π·√(L·C)",
+    ),
+
+    # =========================================================================
+    # 7. КВАНТОВАЯ И ЯДЕРНАЯ ФИЗИКА
+    # =========================================================================
+    Formula(
+        name="Энергия фотона E_ph = h·ν",
+        result_variable=Variable.PHOTON_ENERGY,
+        requires=(Variable.PLANCK, Variable.FREQ_LIGHT),
+        calc=lambda d: d[Variable.PLANCK] * d[Variable.FREQ_LIGHT],
+        pretty="E_ph = h·ν",
+    ),
+    Formula(
+        name="Уравнение Эйнштейна для фотоэффекта E_k = E_ph - A_вых",
+        result_variable=Variable.KINETIC_ENERGY,
+        requires=(Variable.PHOTON_ENERGY, Variable.WORK_FUNCTION),
+        calc=lambda d: d[Variable.PHOTON_ENERGY] - d[Variable.WORK_FUNCTION],
+        pretty="E_k = E_ph - A_вых",
+    ),
+    Formula(
+        name="Запирающее напряжение U_stop = E_k / e",
+        result_variable=Variable.STOPPING_VOLTAGE,
+        requires=(Variable.KINETIC_ENERGY, Variable.ELEM_CHARGE),
+        calc=lambda d: _safe_div(d[Variable.KINETIC_ENERGY], d[Variable.ELEM_CHARGE]),
+        pretty="U_stop = E_k / e",
+    ),
+    Formula(
+        name="Мост: Напряжение цепи от фототока U = U_stop",
+        result_variable=Variable.VOLTAGE,
+        requires=(Variable.STOPPING_VOLTAGE,),
+        calc=lambda d: d[Variable.STOPPING_VOLTAGE],
+        pretty="U = U_stop",
+        is_bridge=True,
+    ),
+    Formula(
+        name="Число излучённых фотонов N = Q / E_ph",
+        result_variable=Variable.PARTICLES_COUNT,
+        requires=(Variable.HEAT, Variable.PHOTON_ENERGY),
+        calc=lambda d: _safe_div(d[Variable.HEAT], d[Variable.PHOTON_ENERGY]),
+        pretty="N = Q / E_ph",
+    ),
+    Formula(
+        name="Суммарный импульс фотонов p_photons = N·E_ph / c",
+        result_variable=Variable.MOMENTUM_PHOTONS,
+        requires=(Variable.PARTICLES_COUNT, Variable.PHOTON_ENERGY, Variable.SPEED_OF_LIGHT),
+        calc=lambda d: _safe_div(
+            d[Variable.PARTICLES_COUNT] * d[Variable.PHOTON_ENERGY], d[Variable.SPEED_OF_LIGHT]
+        ),
+        pretty="p_photons = N·E_ph / c",
+    ),
+    Formula(
+        name="Активность радиоактивного распада A = λ·N",
+        result_variable=Variable.ACTIVITY,
+        requires=(Variable.DECAY_CONSTANT, Variable.PARTICLES_COUNT),
+        calc=lambda d: d[Variable.DECAY_CONSTANT] * d[Variable.PARTICLES_COUNT],
+        pretty="A_act = λ·N",
     ),
 ]
-
-FORMULAS: Dict[str, Formula] = {f.id: f for f in FORMULAS_LIST}

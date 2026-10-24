@@ -110,6 +110,7 @@ VARIABLE_DISPLAY_NAMES.update({
     Variable.V_FUNC: "v(t)",
     Variable.A_FUNC: "a(t)",
     Variable.F_FUNC: "F(t)",
+    Variable.AREA: "S",
 })
 
 # Единицы измерения СИ для вывода ответа
@@ -209,6 +210,7 @@ STRING_TO_VARIABLE.update({
     "m_1": Variable.MASS_1,
     "m_2": Variable.MASS_2,
     "m_vapor": Variable.MASS,
+    "mass_rod": Variable.MASS_ROD,
     "v_0": Variable.VELOCITY_0,
     "v_1": Variable.VELOCITY_1,
     "v_2": Variable.VELOCITY_2,
@@ -219,15 +221,24 @@ STRING_TO_VARIABLE.update({
     "F_fr": Variable.FORCE_FRICTION,
     "N": Variable.NORMAL_FORCE,
     "T_nit": Variable.TENSION,
+    "t_tension": Variable.TENSION,
     "P": Variable.WEIGHT,
     "p_ph": Variable.MOMENTUM_PHOTONS,
+    "S_pl": Variable.AREA,
+    "Area": Variable.AREA,
+    "area": Variable.AREA,
     # Термодинамика
     "c_heat": Variable.SPECIFIC_HEAT,
     "L": Variable.LATENT_VAP,
     # Электродинамика и Кванты
+    "q_charge": Variable.CHARGE,
     "U_volt": Variable.VOLTAGE,
+    "R_ohm": Variable.RESISTANCE,
+    "L_ind": Variable.INDUCTANCE,
     "nu": Variable.FREQ_LIGHT,
+    "nu_freq": Variable.FREQ_LIGHT,
 })
+
 # =====================================================================
 # СЛОВАРЬ ДЛЯ УМНОГО ПОИСКА И АВТОКОМПЛИТА В ИНТЕРФЕЙСЕ (UI)
 # =====================================================================
@@ -261,13 +272,14 @@ UI_SUGGESTIONS = {
     "E_mech": "Полная механическая энергия (E_mech)",
     "A": "Механическая работа (A)",
     "N_power": "Механическая мощность (N_power)",
-    "eta": "КПД в долях (eta)",
+    "eta": "КПД в долях или % (eta)",
 
     # Термодинамика
     "Q": "Количество теплоты (Q)",
     "c": "Удельная теплоемкость (c)",
     "delta_T": "Изменение температуры (delta_T)",
     "L_vap": "Удельная теплота парообразования (L_vap)",
+    "m_rod": "Масса нагреваемого стержня (m_rod)",
 
     # Электричество и Магнетизм
     "I": "Сила тока (I)",
@@ -275,12 +287,20 @@ UI_SUGGESTIONS = {
     "R": "Электрическое сопротивление (R)",
     "P_el": "Электрическая мощность (P_el)",
     "Q_joule": "Теплота Джоуля-Ленца (Q_joule)",
+    "q_charge": "Электрический заряд (q_charge)",
     "B": "Магнитная индукция (B)",
     "l": "Длина проводника в магнитном поле (l)",
+    "S_area": "Площадь контура / сечения (S_area)",
+    "Phi": "Магнитный поток (Phi)",
+    "E_ind": "ЭДС индукции (E_ind)",
+    "L_ind": "Индуктивность катушки (L_ind)",
+    "C": "Электроемкость конденсатора (C)",
+    "T_thomson": "Период колебаний контура (T_thomson)",
 
     # Матанализ (Функции)
     "x(t)": "Уравнение координаты от времени x(t)",
     "v(t)": "Уравнение скорости от времени v(t)",
+    "a(t)": "Уравнение ускорения от времени a(t)",
 
     # Кванты и Микромир
     "nu_freq": "Частота излучения (nu_freq)",

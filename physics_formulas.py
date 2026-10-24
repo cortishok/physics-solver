@@ -548,8 +548,8 @@ FORMULAS_LIST: list[Formula] = [
     Formula(
         name="Магнитный поток (при перпендикулярном поле) Φ = B·S",
         result_variable=Variable.MAGNETIC_FLUX,
-        requires=(Variable.MAGNETIC_B, Variable.DISPLACEMENT),
-        calc=lambda d: d[Variable.MAGNETIC_B] * d[Variable.DISPLACEMENT],
+        requires=(Variable.MAGNETIC_B, Variable.AREA),
+        calc=lambda d: d[Variable.MAGNETIC_B] * d[Variable.AREA],
         pretty="Φ = B·S",
     ),
     Formula(

@@ -13,7 +13,8 @@ class Formula:
     calc: Callable[[dict], float | str]
     pretty: str
     is_bridge: bool = False
-    forward_only: bool = False  # <--- Вот то, чего не хватало!
+    forward_only: bool = False
+    is_symbolic: bool = False
 
 
 def _deg_sin(deg: float) -> float:
@@ -36,26 +37,15 @@ def _safe_sqrt(x: float) -> float:
     return math.sqrt(x)
 
 
-FORMULAS_LIST: list[Formula] = [
-    # Связь высоты наклонной плоскости и пройденного вдоль неё пути: S = h / sin(alpha)
-    Formula(
-        name="Путь по наклонной плоскости через высоту", # <--- Добавил забытое имя
-        result_variable=Variable.DISPLACEMENT,
-        requires=(Variable.HEIGHT, Variable.ANGLE),
-        calc=lambda d: d[Variable.HEIGHT] / math.sin(math.radians(d[Variable.ANGLE])),
-        pretty="S = h / sin(α)",
-        forward_only=True,
-    ),
-    # Основное уравнение кинематики с начальной скоростью и ускорением: S = v0*t + a*t^2 / 2
-    Formula(
-        name="Путь при равноускоренном движении", # <--- Добавил забытое имя
-        result_variable=Variable.DISPLACEMENT,
-        requires=(Variable.VELOCITY_0, Variable.TIME, Variable.ACCELERATION),
-        calc=lambda d: d[Variable.VELOCITY_0] * d[Variable.TIME]
-        + 0.5 * d[Variable.ACCELERATION] * (d[Variable.TIME] ** 2),
-        pretty="S = v0·t + a·t² / 2",
-    ),
+def _calc_photoeffect_ek(d: dict) -> float:
+    e_ph = d[Variable.PHOTON_ENERGY]
+    a_vyh = d[Variable.WORK_FUNCTION]
+    if e_ph < a_vyh:
+        raise ValueError("Фотоэффект невозможен: энергия фотона меньше работы выхода")
+    return e_ph - a_vyh
 
+
+FORMULAS_LIST: list[Formula] = [
     # =========================================================================
     # 1. МАТАНАЛИЗ И АНАЛИТИЧЕСКИЕ ФУНКЦИИ (Задание №2 и интегралы)
     # =========================================================================
@@ -65,6 +55,8 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.X_FUNC,),
         calc=lambda d: math_engine.symbolic_derivative_str(d[Variable.X_FUNC], "t"),
         pretty="v(t) = x'(t)",
+        forward_only=True,
+        is_symbolic=True,
     ),
     Formula(
         name="Производная скорости v'(t)",
@@ -72,6 +64,8 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.V_FUNC,),
         calc=lambda d: math_engine.symbolic_derivative_str(d[Variable.V_FUNC], "t"),
         pretty="a(t) = v'(t)",
+        forward_only=True,
+        is_symbolic=True,
     ),
     Formula(
         name="Зависимость силы от времени F(t) = m·a(t)",
@@ -79,6 +73,8 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.MASS, Variable.A_FUNC),
         calc=lambda d: math_engine.scale_function_str(d[Variable.A_FUNC], d[Variable.MASS], "t"),
         pretty="F(t) = m·a(t)",
+        forward_only=True,
+        is_symbolic=True,
     ),
     Formula(
         name="Значение скорости v(t) в момент t",
@@ -86,6 +82,7 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.V_FUNC, Variable.TIME),
         calc=lambda d: math_engine.eval_ast(d[Variable.V_FUNC], {"t": d[Variable.TIME]}),
         pretty="v = v(t)",
+        forward_only=True,
     ),
     Formula(
         name="Значение ускорения a(t) в момент t",
@@ -93,15 +90,28 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.A_FUNC, Variable.TIME),
         calc=lambda d: math_engine.eval_ast(d[Variable.A_FUNC], {"t": d[Variable.TIME]}),
         pretty="a = a(t)",
+        forward_only=True,
     ),
     Formula(
-        name="Интеграл ускорения v = ∫a(t)dt",
+        name="Интеграл ускорения с начальной скоростью v = v0 + ∫a(t)dt",
+        result_variable=Variable.VELOCITY,
+        requires=(Variable.VELOCITY_0, Variable.A_FUNC, Variable.TIME_START, Variable.TIME_END),
+        calc=lambda d: d[Variable.VELOCITY_0]
+        + math_engine.definite_integral(
+            d[Variable.A_FUNC], d[Variable.TIME_START], d[Variable.TIME_END]
+        ),
+        pretty="v = v0 + ∫a(t)dt",
+        forward_only=True,
+    ),
+    Formula(
+        name="Интеграл ускорения (при v0 = 0) v = ∫a(t)dt",
         result_variable=Variable.VELOCITY,
         requires=(Variable.A_FUNC, Variable.TIME_START, Variable.TIME_END),
         calc=lambda d: math_engine.definite_integral(
             d[Variable.A_FUNC], d[Variable.TIME_START], d[Variable.TIME_END]
         ),
         pretty="v = ∫a(t)dt",
+        forward_only=True,
     ),
     Formula(
         name="Интеграл скорости S = ∫v(t)dt",
@@ -111,11 +121,20 @@ FORMULAS_LIST: list[Formula] = [
             d[Variable.V_FUNC], d[Variable.TIME_START], d[Variable.TIME_END]
         ),
         pretty="S = ∫v(t)dt",
+        forward_only=True,
     ),
 
     # =========================================================================
     # 2. КИНЕМАТИКА
     # =========================================================================
+    Formula(
+        name="Путь по наклонной плоскости через высоту",
+        result_variable=Variable.DISPLACEMENT,
+        requires=(Variable.HEIGHT, Variable.ANGLE),
+        calc=lambda d: _safe_div(d[Variable.HEIGHT], _deg_sin(d[Variable.ANGLE])),
+        pretty="S = h / sin(α)",
+        forward_only=True,
+    ),
     Formula(
         name="Скорость при равноускоренном движении",
         result_variable=Variable.VELOCITY,
@@ -136,7 +155,7 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.VELOCITY_0, Variable.TIME, Variable.ACCELERATION),
         calc=lambda d: d[Variable.VELOCITY_0] * d[Variable.TIME]
         + 0.5 * d[Variable.ACCELERATION] * (d[Variable.TIME] ** 2),
-        pretty="S = v0·t + a·t²/2",
+        pretty="S = v0·t + a·t² / 2",
     ),
     Formula(
         name="Ускорение через путь и время (без начальной скорости)",
@@ -178,7 +197,7 @@ FORMULAS_LIST: list[Formula] = [
         pretty="v = √(μ·g·R)",
     ),
     Formula(
-        name="Угол наклона мотоциклиста в повороте (Задание №7)",
+        name="Предельный угол наклона мотоциклиста в повороте (Задание №7)",
         result_variable=Variable.ANGLE,
         requires=(Variable.FRICTION_COEFF,),
         calc=lambda d: math.degrees(math.atan(d[Variable.FRICTION_COEFF])),
@@ -210,7 +229,7 @@ FORMULAS_LIST: list[Formula] = [
         pretty="m = F / a",
     ),
     Formula(
-        name="Нормальная реакция с силой под углом (Задание №1)",
+        name="Нормальная реакция с силой под углом вверх (Задание №1)",
         result_variable=Variable.NORMAL_FORCE,
         requires=(Variable.MASS, Variable.G_ACCEL, Variable.FORCE, Variable.ANGLE),
         calc=lambda d: d[Variable.MASS] * d[Variable.G_ACCEL]
@@ -292,7 +311,7 @@ FORMULAS_LIST: list[Formula] = [
             -1.0,
             -d[Variable.FRICTION_COEFF] * d[Variable.MASS_2] * d[Variable.G_ACCEL],
         )[1],
-        pretty="Система 2×2: {m1·a + T = F - μ·m1·g; m2·a - T = -μ·m2·g} ➔ T = F·m2 / (m1 + m2)",
+        pretty="Система 2×2: {m1·a + T = F - μ·m1·g; m2·a - T = -μ·m2·g}",
     ),
     Formula(
         name="Угол наклонной плоскости при равномерном подъёме и спуске (Задание №6)",
@@ -520,14 +539,14 @@ FORMULAS_LIST: list[Formula] = [
         pretty="Q_joule = I²·R·t",
     ),
     Formula(
-        name="ЭДС индукции в движущемся проводнике E_ind = B·v·l",
+        name="ЭДС индукции в перпендикулярно движущемся проводнике E_ind = B·v·l",
         result_variable=Variable.EMF_IND,
         requires=(Variable.MAGNETIC_B, Variable.VELOCITY, Variable.WIRE_LENGTH),
         calc=lambda d: d[Variable.MAGNETIC_B] * d[Variable.VELOCITY] * d[Variable.WIRE_LENGTH],
         pretty="E_ind = B·v·l",
     ),
     Formula(
-        name="Магнитный поток Φ = B·S",
+        name="Магнитный поток (при перпендикулярном поле) Φ = B·S",
         result_variable=Variable.MAGNETIC_FLUX,
         requires=(Variable.MAGNETIC_B, Variable.DISPLACEMENT),
         calc=lambda d: d[Variable.MAGNETIC_B] * d[Variable.DISPLACEMENT],
@@ -549,13 +568,13 @@ FORMULAS_LIST: list[Formula] = [
         is_bridge=True,
     ),
     Formula(
-        name="Скорость частицы в циклотроне v = q·B·R / m",
+        name="Скорость частицы в циклотроне v = |q|·B·R / m",
         result_variable=Variable.VELOCITY,
         requires=(Variable.CHARGE, Variable.MAGNETIC_B, Variable.RADIUS, Variable.MASS),
         calc=lambda d: _safe_div(
-            d[Variable.CHARGE] * d[Variable.MAGNETIC_B] * d[Variable.RADIUS], d[Variable.MASS]
+            abs(d[Variable.CHARGE]) * d[Variable.MAGNETIC_B] * d[Variable.RADIUS], d[Variable.MASS]
         ),
-        pretty="v = q·B·R / m",
+        pretty="v = |q|·B·R / m",
     ),
     Formula(
         name="Формула Томсона T = 2π·√(L·C)",
@@ -579,7 +598,7 @@ FORMULAS_LIST: list[Formula] = [
         name="Уравнение Эйнштейна для фотоэффекта E_k = E_ph - A_вых",
         result_variable=Variable.KINETIC_ENERGY,
         requires=(Variable.PHOTON_ENERGY, Variable.WORK_FUNCTION),
-        calc=lambda d: d[Variable.PHOTON_ENERGY] - d[Variable.WORK_FUNCTION],
+        calc=_calc_photoeffect_ek,
         pretty="E_k = E_ph - A_вых",
     ),
     Formula(

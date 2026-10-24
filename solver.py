@@ -21,13 +21,18 @@ ELECTRICAL_CONTEXT_KEYS = {
     "U_stop", "A_vyh", "l", "freq_rot", "C", "L_ind", "R_ohm",
 }
 
+MAGNETIC_FLUX_CONTEXT_KEYS = {
+    "Phi", "MAGNETIC_FLUX", "freq_rot", "omega",
+}
+
+
 def get_display_name(var: Variable) -> str:
     return VARIABLE_DISPLAY_NAMES.get(var, var.value)
+
 
 def _format_val(val) -> str:
     if isinstance(val, str):
         return val
-    # Оставляем чистый 0, убираем срез 1e-9 для спасения микромира
     if val == 0.0:
         return "0"
     if abs(val) >= 1e5 or (0 < abs(val) < 1e-3):
@@ -36,18 +41,20 @@ def _format_val(val) -> str:
         return str(int(round(val)))
     return f"{val:.4f}".rstrip("0").rstrip(".")
 
+
 def _resolve_variable_name(k_str: str, raw_val: str, all_keys: set[str]) -> Variable | None:
-    # Страховочные алиасы для сложных тестов
+    """Разрешение коллизий имён ('R': Радиус vs Сопротивление, 'S': Путь vs Площадь, 'L': Теплота vs Индуктивность)."""
     fallbacks = {
         "q_charge": Variable.CHARGE,
         "nu_freq": Variable.FREQ_LIGHT,
         "t_tension": Variable.TENSION,
+        "s_area": Variable.AREA,
+        "mass_rod": Variable.MASS_ROD,
     }
     k_lower = k_str.lower()
     if k_lower in fallbacks:
         return fallbacks[k_lower]
 
-    # Разрешение коллизии имени 'R' (Радиус vs Сопротивление)
     if k_str == "R":
         val_s = str(raw_val).strip()
         parts = val_s.split()
@@ -59,8 +66,24 @@ def _resolve_variable_name(k_str: str, raw_val: str, all_keys: set[str]) -> Vari
         if not (all_keys & ELECTRICAL_CONTEXT_KEYS):
             return Variable.RADIUS
         return Variable.RESISTANCE
-        
+
+    if k_str == "S":
+        val_s = str(raw_val).strip()
+        parts = val_s.split()
+        unit_part = parts[-1] if len(parts) > 1 else ""
+        if unit_part in ("м2", "м²", "см2", "см²", "мм2", "мм²"):
+            return Variable.AREA
+        if (all_keys & MAGNETIC_FLUX_CONTEXT_KEYS) and not (all_keys & {"v", "v0", "a", "t", "F", "h"}):
+            return Variable.AREA
+        return Variable.DISPLACEMENT
+
+    if k_str == "L":
+        if all_keys & {"C", "T_thomson", "T_period", "I"}:
+            return Variable.INDUCTANCE
+        return Variable.LATENT_VAP
+
     return STRING_TO_VARIABLE.get(k_str)
+
 
 def solve_and_calculate(given: dict, target_str: str) -> dict:
     target_clean = str(target_str).strip()
@@ -72,33 +95,6 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
 
     # 1. Парсинг входного словаря Дано
     known_values: dict[Variable, float | str] = dict(DEFAULT_CONSTANTS)
-    
-    # --- ПРОВЕРКА ФИЗИЧЕСКОГО ОДЗ НА ВХОДЕ ---
-    if Variable.EFFICIENCY in known_values:
-        eta_val = known_values[Variable.EFFICIENCY]
-        if isinstance(eta_val, (int, float)):
-            if 1.0 < eta_val <= 100.0:
-                known_values[Variable.EFFICIENCY] = eta_val / 100.0
-            elif eta_val <= 0 or eta_val > 100.0:
-                return {"error": f"Физическая ошибка: КПД не может быть равен {eta_val}."}
-
-    strictly_positive = {
-        Variable.MASS: "Масса (m)",
-        Variable.MASS_1: "Масса (m1)",
-        Variable.MASS_2: "Масса (m2)",
-        Variable.WAVELENGTH: "Длина волны",
-        Variable.FREQ_LIGHT: "Частота излучения",
-        Variable.RADIUS: "Радиус",
-    }
-    for var_key, var_label in strictly_positive.items():
-        if var_key in known_values and isinstance(known_values[var_key], (int, float)):
-            if known_values[var_key] <= 0:
-                return {"error": f"Физическая ошибка в Дано: {var_label} должна быть больше нуля."}
-
-    if Variable.TIME in known_values and isinstance(known_values[Variable.TIME], (int, float)):
-        if known_values[Variable.TIME] < 0:
-            return {"error": "Физическая ошибка в Дано: время (t) не может быть отрицательным."}
-            
     user_vars: set[Variable] = set()
 
     for raw_k, raw_v in given.items():
@@ -122,6 +118,36 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
         except Exception as exc:
             return {"error": str(exc)}
 
+    # --- ПРОВЕРКА ФИЗИЧЕСКОГО ОДЗ НА ВХОДЕ (после заполнения known_values) ---
+    if Variable.EFFICIENCY in user_vars:
+        eta_val = known_values[Variable.EFFICIENCY]
+        if isinstance(eta_val, (int, float)):
+            if 1.0 < eta_val <= 100.0:
+                known_values[Variable.EFFICIENCY] = eta_val / 100.0
+            elif eta_val <= 0 or eta_val > 100.0:
+                return {"error": f"Физическая ошибка: КПД не может быть равен {eta_val}."}
+
+    strictly_positive = {
+        Variable.MASS: "Масса (m)",
+        Variable.MASS_1: "Масса (m1)",
+        Variable.MASS_2: "Масса (m2)",
+        Variable.MASS_ROD: "Масса стержня (m_rod)",
+        Variable.WAVELENGTH: "Длина волны",
+        Variable.FREQ_LIGHT: "Частота излучения",
+        Variable.RADIUS: "Радиус",
+        Variable.AREA: "Площадь (S_area)",
+        Variable.VOLUME: "Объём (V)",
+        Variable.TEMP: "Абсолютная температура (T)",
+    }
+    for var_key, var_label in strictly_positive.items():
+        if var_key in user_vars and isinstance(known_values[var_key], (int, float)):
+            if known_values[var_key] <= 0:
+                return {"error": f"Физическая ошибка в Дано: {var_label} должна быть больше нуля."}
+
+    if Variable.TIME in user_vars and isinstance(known_values[Variable.TIME], (int, float)):
+        if known_values[Variable.TIME] < 0:
+            return {"error": "Физическая ошибка в Дано: время (t) не может быть отрицательным."}
+
     # Контекстная маршрутизация цели
     if target_var == Variable.MOMENTUM and Variable.FREQ_LIGHT in user_vars:
         target_var = Variable.MOMENTUM_PHOTONS
@@ -132,6 +158,9 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
         and Variable.TIME not in user_vars
     ):
         target_var = Variable.F_FUNC
+
+    if target_var == Variable.PERIOD and (Variable.INDUCTANCE in user_vars or Variable.CAPACITANCE in user_vars):
+        target_var = Variable.THOMSON_PERIOD
 
     if target_var in user_vars:
         val = known_values[target_var]
@@ -221,12 +250,15 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
             if formula.pretty == "a = 2·S / t²" and Variable.VELOCITY_0 in user_vars and known_values.get(Variable.VELOCITY_0) != 0.0:
                 continue
 
-            # Физическое ограничение 3: фантомная наклонная плоскость
+            # Физическое ограничение 3: интеграл ускорения без v0 применяется только если v0 не задана (или равна 0)
+            if formula.pretty == "v = ∫a(t)dt" and Variable.VELOCITY_0 in user_vars and known_values.get(Variable.VELOCITY_0) != 0.0:
+                continue
+
+            # Физическое ограничение 4: фантомная наклонная плоскость мотоциклиста
             if formula.pretty == "α = arctg(μ)" and target_var != Variable.ANGLE:
                 continue
 
-            # Физическое ограничение 4: Изоляция квантового моста. 
-            # Запрещаем U = U_stop, если в задаче нет квантового контекста.
+            # Физическое ограничение 5: Изоляция квантового моста U = U_stop
             if formula.pretty == "U = U_stop":
                 quantum_context = {Variable.WORK_FUNCTION, Variable.PHOTON_ENERGY, Variable.FREQ_LIGHT, Variable.WAVELENGTH}
                 if not any(q in user_vars for q in quantum_context) and target_var not in quantum_context:
@@ -245,8 +277,13 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
                 if existing_score is None or cand_score > existing_score:
                     updates_in_layer[res_var] = ("direct", formula, cand_score)
 
-            # Обратный алгебраический шаг
-            elif not formula.is_bridge and res_var in known_vars:
+            # Обратный алгебраический шаг (с учётом флагов forward_only и is_symbolic)
+            elif (
+                not formula.is_bridge
+                and not getattr(formula, "forward_only", False)
+                and not getattr(formula, "is_symbolic", False)
+                and res_var in known_vars
+            ):
                 missing = [req for req in formula.requires if req not in known_vars]
                 if len(missing) == 1:
                     miss_var = missing[0]
@@ -261,7 +298,7 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
                             ek_source = derivation.get(Variable.KINETIC_ENERGY)
                             if ek_source and Variable.VELOCITY_0 in ek_source[1].requires:
                                 continue
-                                
+
                         deps = [res_var] + [r for r in formula.requires if r != miss_var]
                         cand_score = _tree_stats(deps, "inverse", formula)
                         updates_in_layer[miss_var] = ("inverse", formula, cand_score)
@@ -326,7 +363,7 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
                 steps_str.append(f"{idx}. {formula.pretty} ➔ {val_str}")
             else:
                 steps_str.append(f"{idx}. Из [{formula.pretty}] выражаем {get_display_name(out_var)} ➔ {val_str}")
-                
+
     except Exception as exc:
         return {"error": f"Математическая ошибка при расчёте: {exc}"}
 

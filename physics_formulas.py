@@ -15,6 +15,8 @@ class Formula:
     is_bridge: bool = False
     forward_only: bool = False
     is_symbolic: bool = False
+    # Теги для контекстных ограничений солвера (надёжнее сверки с pretty-строками)
+    tags: tuple[str, ...] = ()
 
 
 def _deg_sin(deg: float) -> float:
@@ -35,6 +37,23 @@ def _safe_sqrt(x: float) -> float:
     if x < 0:
         raise ValueError("math domain error: корень из отрицательного числа")
     return math.sqrt(x)
+
+
+def _signed_work(force, displacement: float) -> float:
+    """Работа силы: знак определяется знаком проекции силы (F·S, а не |F|·S)."""
+    return force * displacement
+
+
+def _v_from_squared_eq(y: float, mass: float) -> float:
+    """
+    Обратный ход для E = m·v²/2: возвращает ОБА вещественных корня ±√(2E/m).
+    Солвер выберет физически осмысленный (учёт направления движения и знака кинематики).
+    """
+    disc = 2.0 * y / mass
+    if disc < -1e-12:
+        raise ValueError("Кинетическая энергия отрицательна — обратное извлечение скорости невозможно")
+    v_abs = math.sqrt(max(0.0, disc))
+    return [v_abs, -v_abs]
 
 
 def _calc_photoeffect_ek(d: dict) -> float:
@@ -111,6 +130,7 @@ FORMULAS_LIST: list[Formula] = [
             d[Variable.A_FUNC], d[Variable.TIME_START], d[Variable.TIME_END]
         ),
         pretty="v = ∫a(t)dt",
+        tags=("no_v0",),
         forward_only=True,
     ),
     Formula(
@@ -121,6 +141,34 @@ FORMULAS_LIST: list[Formula] = [
             d[Variable.V_FUNC], d[Variable.TIME_START], d[Variable.TIME_END]
         ),
         pretty="S = ∫v(t)dt",
+        forward_only=True,
+    ),
+    Formula(
+        name="Заряд как интеграл тока q = ∫i(t)dt",
+        result_variable=Variable.CHARGE,
+        requires=(Variable.CURRENT_FUNC, Variable.TIME_START, Variable.TIME_END),
+        calc=lambda d: math_engine.definite_integral(
+            d[Variable.CURRENT_FUNC], d[Variable.TIME_START], d[Variable.TIME_END]
+        ),
+        pretty="q = ∫i(t)dt",
+        forward_only=True,
+    ),
+    Formula(
+        name="Работа переменной силы A = ∫F(x)dx",
+        result_variable=Variable.WORK,
+        requires=(Variable.F_FUNC, Variable.COORD_START, Variable.COORD_END),
+        calc=lambda d: math_engine.definite_integral(
+            str(d[Variable.F_FUNC]).replace("x", "t"), d[Variable.COORD_START], d[Variable.COORD_END]
+        ),
+        pretty="A = ∫F(x)dx",
+        forward_only=True,
+    ),
+    Formula(
+        name="Магнитный поток как функция времени Φ(t)",
+        result_variable=Variable.MAGNETIC_FLUX,
+        requires=(Variable.MAGNETIC_FLUX_FUNC, Variable.TIME),
+        calc=lambda d: math_engine.eval_ast(d[Variable.MAGNETIC_FLUX_FUNC], {"t": d[Variable.TIME]}),
+        pretty="Φ = Φ(t)",
         forward_only=True,
     ),
 
@@ -163,6 +211,7 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.DISPLACEMENT, Variable.TIME),
         calc=lambda d: _safe_div(2.0 * d[Variable.DISPLACEMENT], d[Variable.TIME] ** 2),
         pretty="a = 2·S / t²",
+        tags=("no_v0",),
     ),
     Formula(
         name="Перемещение через среднюю скорость",
@@ -202,6 +251,7 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.FRICTION_COEFF,),
         calc=lambda d: math.degrees(math.atan(d[Variable.FRICTION_COEFF])),
         pretty="α = arctg(μ)",
+        tags=("angle_only",),
     ),
 
     # =========================================================================
@@ -370,6 +420,7 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.MASS, Variable.VELOCITY_0),
         calc=lambda d: 0.5 * d[Variable.MASS] * (d[Variable.VELOCITY_0] ** 2),
         pretty="E_k = m·v0² / 2",
+        tags=("needs_v0_nonzero",),
     ),
     Formula(
         name="Потенциальная энергия в поле тяжести",
@@ -398,8 +449,9 @@ FORMULAS_LIST: list[Formula] = [
         name="Механическая работа через силу и путь",
         result_variable=Variable.WORK,
         requires=(Variable.FORCE, Variable.DISPLACEMENT),
-        calc=lambda d: abs(d[Variable.FORCE]) * d[Variable.DISPLACEMENT],
+        calc=lambda d: _signed_work(d[Variable.FORCE], d[Variable.DISPLACEMENT]),
         pretty="A = F·S",
+        tags=("signed_work",),
     ),
     Formula(
         name="Мост: Работа равна изменению кинетической энергии",
@@ -424,6 +476,16 @@ FORMULAS_LIST: list[Formula] = [
         calc=lambda d: d[Variable.KINETIC_ENERGY],
         pretty="E_p = E_k",
         is_bridge=True,
+        tags=("energy_bridge",),
+    ),
+    Formula(
+        name="Мост: Обратный переход E_k = E_p (падение: v = sqrt(2gh))",
+        result_variable=Variable.KINETIC_ENERGY,
+        requires=(Variable.POTENTIAL_ENERGY,),
+        calc=lambda d: d[Variable.POTENTIAL_ENERGY],
+        pretty="E_k = E_p",
+        is_bridge=True,
+        tags=("energy_bridge",),
     ),
     Formula(
         name="Механическая мощность N = A / t",
@@ -438,6 +500,14 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.POWER_MECH, Variable.EFFICIENCY),
         calc=lambda d: _safe_div(d[Variable.POWER_MECH], d[Variable.EFFICIENCY]),
         pretty="P_el = N / η",
+    ),
+
+    Formula(
+        name="Работа/энергия растянутой пружины A = k·x² / 2",
+        result_variable=Variable.WORK,
+        requires=(Variable.SPRING_K, Variable.SPRING_X),
+        calc=lambda d: 0.5 * d[Variable.SPRING_K] * (d[Variable.SPRING_X] ** 2),
+        pretty="A = k·x² / 2",
     ),
 
     # =========================================================================
@@ -614,6 +684,7 @@ FORMULAS_LIST: list[Formula] = [
         requires=(Variable.STOPPING_VOLTAGE,),
         calc=lambda d: d[Variable.STOPPING_VOLTAGE],
         pretty="U = U_stop",
+        tags=("quantum_bridge",),
         is_bridge=True,
     ),
     Formula(

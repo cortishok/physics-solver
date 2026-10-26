@@ -25,6 +25,37 @@ MAGNETIC_FLUX_CONTEXT_KEYS = {
     "Phi", "MAGNETIC_FLUX", "freq_rot", "omega",
 }
 
+# Переменные-функции матанализа (значения — строки-выражения, а не числа)
+FUNCTION_VARS = {
+    Variable.X_FUNC,
+    Variable.V_FUNC,
+    Variable.A_FUNC,
+    Variable.F_FUNC,
+    Variable.CURRENT_FUNC,
+    Variable.MAGNETIC_FLUX_FUNC,
+}
+
+# Ключи для контекстной маршрутизации цели (п.4 ревью): электричество vs механика
+MECHANICAL_CONTEXT_KEYS = {
+    "m", "v", "v0", "a", "t", "F", "h", "S", "p", "E_k", "E_p",
+    "N_power", "A", "mu", "k", "x_spring", "P_weight", "T_tension", "N_norm",
+}
+ELASTIC_CONTEXT_KEYS = {"k", "x_spring"}
+CURRENT_CONTEXT_KEYS = {"I", "i(t)", "q", "Q_joule", "R", "U"}
+
+
+def _has_implicit_velocity_direction(state: dict, var: Variable) -> bool | None:
+    """
+    Возвращает знак скорости из кинематического контекста Дано,
+    если он однозначно следует из заданных проекций (v0 / v). Иначе None.
+    Нужно для обратного хода формул с v^2 (E_k, p): там теряется знак.
+    """
+    for src_var in (Variable.VELOCITY_0, Variable.VELOCITY):
+        if src_var in state and isinstance(state[src_var], (int, float)) and src_var != var:
+            if state[src_var] < 0:
+                return False
+    return None
+
 
 def get_display_name(var: Variable) -> str:
     return VARIABLE_DISPLAY_NAMES.get(var, var.value)
@@ -103,12 +134,7 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
         if var_enum is None:
             return {"error": f"Ошибка разбора: неизвестная переменная '{k_str}'"}
 
-        is_func_var = var_enum in (
-            Variable.X_FUNC,
-            Variable.V_FUNC,
-            Variable.A_FUNC,
-            Variable.F_FUNC,
-        )
+        is_func_var = var_enum in FUNCTION_VARS
         try:
             parsed_val = parse_value_with_unit(raw_v, is_func=is_func_var)
             if is_func_var:
@@ -126,6 +152,19 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
                 known_values[Variable.EFFICIENCY] = eta_val / 100.0
             elif eta_val <= 0 or eta_val > 100.0:
                 return {"error": f"Физическая ошибка: КПД не может быть равен {eta_val}."}
+
+    # Углы: синусы/косинсы в формулах решают задачу только при alpha ∈ (-90°; 90°)
+    for angle_key, angle_label in ((Variable.ANGLE, "Угол наклона (alpha)"),):
+        if angle_key in user_vars and isinstance(known_values[angle_key], (int, float)):
+            if abs(known_values[angle_key]) >= 90.0:
+                return {
+                    "error": f"Физическая ошибка в Дано: {angle_label} должен лежать в пределах (-90°; 90°), получено {known_values[angle_key]}°."
+                }
+
+    # Абсолютная температура не может быть отрицательной (п.6 ревью)
+    if Variable.TEMP in user_vars and isinstance(known_values[Variable.TEMP], (int, float)):
+        if known_values[Variable.TEMP] < 0:
+            return {"error": "Физическая ошибка в Дано: абсолютная температура T не может быть меньше 0 К."}
 
     strictly_positive = {
         Variable.MASS: "Масса (m)",
@@ -151,6 +190,12 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
     # Контекстная маршрутизация цели
     if target_var == Variable.MOMENTUM and Variable.FREQ_LIGHT in user_vars:
         target_var = Variable.MOMENTUM_PHOTONS
+
+    # Импульс тока: в чисто электрической задаче "I" (импульс) — это заряд q = I·t (п.4 ревью)
+    if target_var == Variable.MOMENTUM:
+        given_keys = {get_display_name(v) for v in user_vars} | set(all_input_keys)
+        if given_keys & CURRENT_CONTEXT_KEYS and not (given_keys & MECHANICAL_CONTEXT_KEYS):
+            target_var = Variable.CHARGE
 
     if (
         target_var == Variable.FORCE
@@ -290,8 +335,7 @@ def solve_and_calculate(given: dict, target_str: str) -> dict:
                     if (
                         miss_var not in known_vars
                         and miss_var not in updates_in_layer
-                        and miss_var
-                        not in (Variable.X_FUNC, Variable.V_FUNC, Variable.A_FUNC, Variable.F_FUNC)
+                        and miss_var not in FUNCTION_VARS
                     ):
                         # Запрет круговой тавтологии E_k(v_0) -> v
                         if formula.result_variable == Variable.KINETIC_ENERGY and Variable.VELOCITY in formula.requires:

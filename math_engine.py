@@ -237,6 +237,11 @@ def symbolic_derivative_str(expr: str, var: str = "t") -> str:
                 cos_call = ast.Call(func=ast.Name(id="cos", ctx=ast.Load()), args=[arg], keywords=[])
                 cos_sq = ast.BinOp(left=cos_call, op=ast.Pow(), right=ast.Constant(value=2.0))
                 return ast.BinOp(left=arg_d, op=ast.Div(), right=cos_sq)
+            if fn in ("ctg", "cot", "cotan"):
+                sin_call = ast.Call(func=ast.Name(id="sin", ctx=ast.Load()), args=[arg], keywords=[])
+                sin_sq = ast.BinOp(left=sin_call, op=ast.Pow(), right=ast.Constant(value=2.0))
+                neg = ast.UnaryOp(op=ast.USub(), operand=arg_d)
+                return ast.BinOp(left=neg, op=ast.Div(), right=sin_sq)
             if fn == "sqrt":
                 sqrt_call = ast.Call(func=ast.Name(id="sqrt", ctx=ast.Load()), args=[arg], keywords=[])
                 denom = ast.BinOp(left=ast.Constant(value=2.0), op=ast.Mult(), right=sqrt_call)
@@ -246,10 +251,47 @@ def symbolic_derivative_str(expr: str, var: str = "t") -> str:
                 return ast.BinOp(left=exp_call, op=ast.Mult(), right=arg_d)
             if fn in ("log", "ln"):
                 return ast.BinOp(left=arg_d, op=ast.Div(), right=arg)
+            if fn == "log10":
+                ln10 = ast.Call(
+                    func=ast.Name(id="ln", ctx=ast.Load()),
+                    args=[ast.Constant(value=10.0)],
+                    keywords=[],
+                )
+                denom = ast.BinOp(left=arg, op=ast.Mult(), right=ln10)
+                return ast.BinOp(left=arg_d, op=ast.Div(), right=denom)
+            if fn == "log2":
+                ln2 = ast.Call(
+                    func=ast.Name(id="ln", ctx=ast.Load()),
+                    args=[ast.Constant(value=2.0)],
+                    keywords=[],
+                )
+                denom = ast.BinOp(left=arg, op=ast.Mult(), right=ln2)
+                return ast.BinOp(left=arg_d, op=ast.Div(), right=denom)
             if fn in ("atan", "arctg"):
                 arg_sq = ast.BinOp(left=arg, op=ast.Pow(), right=ast.Constant(value=2.0))
                 denom = ast.BinOp(left=ast.Constant(value=1.0), op=ast.Add(), right=arg_sq)
                 return ast.BinOp(left=arg_d, op=ast.Div(), right=denom)
+            if fn in ("asin", "arcsin"):
+                arg_sq = ast.BinOp(left=arg, op=ast.Pow(), right=ast.Constant(value=2.0))
+                one_minus = ast.BinOp(left=ast.Constant(value=1.0), op=ast.Sub(), right=arg_sq)
+                sqrt_call = ast.Call(func=ast.Name(id="sqrt", ctx=ast.Load()), args=[one_minus], keywords=[])
+                return ast.BinOp(left=arg_d, op=ast.Div(), right=sqrt_call)
+            if fn in ("acos", "arccos"):
+                arg_sq = ast.BinOp(left=arg, op=ast.Pow(), right=ast.Constant(value=2.0))
+                one_minus = ast.BinOp(left=ast.Constant(value=1.0), op=ast.Sub(), right=arg_sq)
+                sqrt_call = ast.Call(func=ast.Name(id="sqrt", ctx=ast.Load()), args=[one_minus], keywords=[])
+                neg = ast.UnaryOp(op=ast.USub(), operand=arg_d)
+                return ast.BinOp(left=neg, op=ast.Div(), right=sqrt_call)
+            if fn == "sinh":
+                cosh_call = ast.Call(func=ast.Name(id="cosh", ctx=ast.Load()), args=[arg], keywords=[])
+                return ast.BinOp(left=cosh_call, op=ast.Mult(), right=arg_d)
+            if fn == "cosh":
+                sinh_call = ast.Call(func=ast.Name(id="sinh", ctx=ast.Load()), args=[arg], keywords=[])
+                return ast.BinOp(left=sinh_call, op=ast.Mult(), right=arg_d)
+            if fn == "tanh":
+                cosh_call = ast.Call(func=ast.Name(id="cosh", ctx=ast.Load()), args=[arg], keywords=[])
+                cosh_sq = ast.BinOp(left=cosh_call, op=ast.Pow(), right=ast.Constant(value=2.0))
+                return ast.BinOp(left=arg_d, op=ast.Div(), right=cosh_sq)
 
         raise ValueError(f"Не удалось продифференцировать выражение '{expr}'")
 
@@ -366,7 +408,11 @@ def scale_function_str(expr: str, factor: float, var: str = "t") -> str:
 
 
 def definite_integral(expr: str, t_start: float, t_end: float, steps: int = 200) -> float:
-    """Численное интегрирование методом Симпсона с гарантией чётности числа шагов."""
+    """
+    Численное интегрирование методом Симпсона с гарантией чётности числа шагов.
+    Проверяет конечность значений во всех узлах: особенность (например tan(t) на [0, π/2])
+    обнаруживается и превращается в явную ошибку вместо мусорного числа.
+    """
     normalize_expr(expr)
     if math.isclose(t_start, t_end):
         return 0.0
@@ -375,12 +421,28 @@ def definite_integral(expr: str, t_start: float, t_end: float, steps: int = 200)
     if steps % 2 != 0:
         steps += 1
     h = (t_end - t_start) / steps
-    total = eval_ast(expr, {"t": t_start}) + eval_ast(expr, {"t": t_end})
-    for i in range(1, steps):
+    total = 0.0
+    for i in range(steps + 1):
         t_val = t_start + i * h
-        weight = 4.0 if i % 2 == 1 else 2.0
-        total += weight * eval_ast(expr, {"t": t_val})
-    return total * h / 3.0
+        try:
+            y = eval_ast(expr, {"t": t_val})
+        except (ZeroDivisionError, ValueError) as exc:
+            raise ValueError(
+                f"Особанность подынтегральной функции в точке t = {t_val:.6g}: {exc}"
+            ) from exc
+        if not math.isfinite(y):
+            raise ValueError(f"Особанность подынтегральной функции в точке t = {t_val:.6g}")
+        if i == 0 or i == steps:
+            weight = 1.0
+        elif i % 2 == 1:
+            weight = 4.0
+        else:
+            weight = 2.0
+        total += weight * y
+    result = total * h / 3.0
+    if not math.isfinite(result):
+        raise ValueError("Численное интегрирование сошлось к бесконечности (особанность функции)")
+    return result
 
 
 # --- РЕШАТЕЛЬ ЛИНЕЙНЫХ СИСТЕМ 2x2 И НЕЯВНЫХ УРАВНЕНИЙ ---

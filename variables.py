@@ -1,6 +1,5 @@
 from enum import Enum
 
-
 class Variable(Enum):
     # --- Кинематика и Механика ---
     MASS = "m"
@@ -56,6 +55,10 @@ class Variable(Enum):
     V_FUNC = "v_func"
     A_FUNC = "a_func"
     F_FUNC = "F_func"
+    CURRENT_FUNC = "i_func"
+    MAGNETIC_FLUX_FUNC = "Phi_func"
+    COORD_START = "x1"
+    COORD_END = "x2"
 
     # --- Термодинамика и МКТ ---
     HEAT = "Q"
@@ -110,11 +113,24 @@ VARIABLE_DISPLAY_NAMES.update({
     Variable.V_FUNC: "v(t)",
     Variable.A_FUNC: "a(t)",
     Variable.F_FUNC: "F(t)",
+    Variable.CURRENT_FUNC: "i(t)",
+    Variable.MAGNETIC_FLUX_FUNC: "Φ(t)",
+    Variable.COORD_START: "x1",
+    Variable.COORD_END: "x2",
     Variable.AREA: "S",
 })
 
 # Единицы измерения СИ для вывода ответа
 VARIABLE_UNITS = {
+    # --- Функции матанализа (значения — строки-выражения, единица не выводится) ---
+    Variable.X_FUNC: "",
+    Variable.V_FUNC: "",
+    Variable.A_FUNC: "",
+    Variable.F_FUNC: "",
+    Variable.CURRENT_FUNC: "",
+    Variable.MAGNETIC_FLUX_FUNC: "",
+    Variable.COORD_START: "м",
+    Variable.COORD_END: "м",
     Variable.MASS: "кг",
     Variable.MASS_1: "кг",
     Variable.MASS_2: "кг",
@@ -206,6 +222,13 @@ STRING_TO_VARIABLE.update({
     "v(t)": Variable.V_FUNC,
     "a(t)": Variable.A_FUNC,
     "F(t)": Variable.F_FUNC,
+    "F(x)": Variable.F_FUNC,
+    "i(t)": Variable.CURRENT_FUNC,
+    "I(t)": Variable.CURRENT_FUNC,
+    "Phi(t)": Variable.MAGNETIC_FLUX_FUNC,
+    "B(t)": Variable.MAGNETIC_FLUX_FUNC,
+    "x1": Variable.COORD_START,
+    "x2": Variable.COORD_END,
     # Индексы и синонимы механики
     "m_1": Variable.MASS_1,
     "m_2": Variable.MASS_2,
